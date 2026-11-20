@@ -8,7 +8,7 @@ import {
 
 readme = "README.md"
 
-repository = "https://github.com/iyi/mooniperf"
+repository = "https://github.com/yiii0012/mooniperf"
 
 license = "Apache-2.0"
 
