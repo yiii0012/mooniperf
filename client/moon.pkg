@@ -3,9 +3,9 @@ import {
   "moonbitlang/async/aqueue",
   "moonbitlang/async/socket",
   "moonbitlang/core/json",
-  "iyi/mooniperf/ctl",
-  "iyi/mooniperf/stats",
-  "iyi/mooniperf/report",
-  "iyi/mooniperf/wire",
+  "yiii0012/mooniperf/ctl",
+  "yiii0012/mooniperf/stats",
+  "yiii0012/mooniperf/report",
+  "yiii0012/mooniperf/wire",
 }
 supported_targets = "+native"
