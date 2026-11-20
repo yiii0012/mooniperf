@@ -1,4 +1,4 @@
-name = "iyi/mooniperf"
+name = "yiii0012/mooniperf"
 
 version = "0.1.0"
 
