@@ -1,0 +1,9 @@
+import {
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+  "moonbitlang/core/strconv",
+  "iyi/mooniperf/client",
+  "iyi/mooniperf/server",
+}
+pkgtype(kind: "executable")
+supported_targets = "+native"

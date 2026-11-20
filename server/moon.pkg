@@ -1,0 +1,10 @@
+import {
+  "moonbitlang/async",
+  "moonbitlang/async/aqueue",
+  "moonbitlang/async/socket",
+  "iyi/mooniperf/ctl",
+  "iyi/mooniperf/stats",
+  "iyi/mooniperf/report",
+  "iyi/mooniperf/wire",
+}
+supported_targets = "+native"

@@ -1,0 +1,16 @@
+# MoonBit build output
+target/
+_build/
+.mooncakes/
+.moon-lock
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Local test artifacts
+*.log

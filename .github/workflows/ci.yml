@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MoonBit
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+          irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
+          echo "$HOME/.moon/bin" | Out-File -Append $env:GITHUB_PATH
+      - name: Check
+        run: moon check
+      - name: Test
+        run: moon test
+      - name: Build
+        run: moon build
+      - name: Loopback smoke test (TCP)
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter main.exe _build | Select-Object -First 1 -ExpandProperty FullName
+          $srv = Start-Process -FilePath $exe -ArgumentList '-s','-p','15201' -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 2
+          & $exe -c 127.0.0.1 -p 15201 -t 2
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $exe -c 127.0.0.1 -p 15201 -u -b 2M -t 2
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Stop-Process -Id $srv.Id -Force
