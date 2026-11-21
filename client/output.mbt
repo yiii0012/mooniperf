@@ -318,9 +318,15 @@ fn build_json_report(
       ]),
     ),
   ])
-  obj([
+  let fields : Array[(String, @json.Json)] = [
     pair("start", start_obj),
     pair("intervals", @ctl.jarr(recs)),
     pair("end", end_obj),
-  ])
+  ]
+  // --get-server-output: embed the server's summary in the report, like
+  // iperf3 does with server_output_json (we surface the same text).
+  if server.server_output_text != "" {
+    fields.push(pair("server_output_text", jstr(server.server_output_text)))
+  }
+  obj(fields)
 }

@@ -25,12 +25,26 @@ test "effective_blksize: explicit -l wins, else protocol default" {
     num_bytes: 0L,
     blockcount: 0L,
     window: 0,
+    get_server_output: false,
     json: false,
   }
   assert_eq(effective_blksize(base), 131072)
   assert_eq(effective_blksize({ ..base, udp: true, }), 8192)
   assert_eq(effective_blksize({ ..base, blksize: 65536, }), 65536)
   assert_eq(effective_blksize({ ..base, udp: true, blksize: 4096, }), 4096)
+}
+
+///|
+test "send_bitrate: -1 falls back to iperf3 defaults, 0 is unlimited" {
+  // Option not given (-1): UDP defaults to 1 Mbit/s, TCP unlimited.
+  assert_eq(send_bitrate(-1L, true), 1000000L)
+  assert_eq(send_bitrate(-1L, false), 0L)
+  // -b 0 explicitly means unlimited (iperf3 semantics), for both protocols.
+  assert_eq(send_bitrate(0L, true), 0L)
+  assert_eq(send_bitrate(0L, false), 0L)
+  // A positive target paces UDP and TCP alike.
+  assert_eq(send_bitrate(10000000L, true), 10000000L)
+  assert_eq(send_bitrate(10000000L, false), 10000000L)
 }
 
 ///|

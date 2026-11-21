@@ -278,12 +278,16 @@ async fn handle_test(
       Some(j) => @ctl.Results::from_json(j).streams.map(fn(s) { s.id })
       None => []
     }
+    let summary = build_summary_text(params, st, end_s)
+    // --get-server-output (iperf3 semantics): the client asked for our
+    // summary, so ride it along inside the results JSON.
+    let server_text = if params.get_server_output > 0 { summary } else { "" }
     @wire.write_json_msg(
       conn,
-      build_results(params, st, end_s, peer_ids).to_json(),
+      build_results(params, st, end_s, peer_ids, server_text).to_json(),
     )
     @wire.write_state(conn, @ctl.DISPLAY_RESULTS)
-    print_summary(params, st, end_s)
+    println(summary)
     // Client closes the data sockets around now; IPERF_DONE follows.
     let _ = @wire.read_state(conn)
     conn.close()
@@ -520,12 +524,15 @@ fn spawn_udp_sender(
 /// Build the server-side (receiver) results for EXCHANGE_RESULTS. `peer_ids`
 /// carries the stream ids as the CLIENT declared them (positional match with
 /// our receiver ordinals, which sort ascending as 1, 3, 4, ...); entries past
-/// its length fall back to iperf3's own id sequence.
+/// its length fall back to iperf3's own id sequence. `server_output_text` is
+/// the summary to ride along when the client asked for --get-server-output
+/// ("" keeps the JSON key absent, like iperf3).
 fn build_results(
   params : @ctl.Params,
   st : TestStats,
   end_s : Double,
   peer_ids : Array[Int32],
+  server_output_text : String,
 ) -> @ctl.Results {
   let ordinals = Array::from_iter(st.bytes.keys())
   ordinals.sort()
@@ -589,14 +596,21 @@ fn build_results(
     cpu_util_system: 0.0,
     sender_has_retransmits: 0L,
     streams,
+    server_output_text,
   }
 }
 
 ///|
-/// iperf3-style final summary on the server console.
-fn print_summary(params : @ctl.Params, st : TestStats, end_s : Double) -> Unit {
-  println("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -")
-  println("[ ID] Interval           Transfer     Bitrate")
+/// iperf3-style final summary on the server console. Also returned as
+/// `server_output_text` in the results JSON when the client asked for it.
+fn build_summary_text(
+  params : @ctl.Params,
+  st : TestStats,
+  end_s : Double,
+) -> String {
+  let out = StringBuilder()
+  out.write_string("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n")
+  out.write_string("[ ID] Interval           Transfer     Bitrate\n")
   for id in st.bytes.keys() {
     let bytes = mget64(st.bytes, id, 0L)
     let bps = @stats.bits_per_second(bytes, end_s - params.omit.to_double())
@@ -611,9 +625,11 @@ fn print_summary(params : @ctl.Params, st : TestStats, end_s : Double) -> Unit {
       sb.write_string("  \{e}/\{pk}")
     }
     sb.write_string("    receiver")
-    println(sb.to_string())
+    out.write_string(sb.to_string())
+    out.write_string("\n")
   }
-  println("")
+  out.write_string("\n")
+  out.to_string()
 }
 
 ///|

@@ -24,8 +24,8 @@ v0.1 已交付的能力见 [README](../README.md)。以下按优先级列出后�
 3. **微秒级 UDP 时间戳**：事件循环时钟为毫秒精度，报文头时间戳分辨率受限；
    需要单调高精度时钟接口。
 
-4. **`--bidir` 双向模式**、**`--get-server-output`**、**CPU 利用率统计**
-   （`getrusage` FFI）。
+4. **`--bidir` 双向模式**、**CPU 利用率统计**
+   （`getrusage` FFI）。（`--get-server-output` 已在 v0.1.2 交付。）
 
 5. **服务器并发多测试**：v0.1 一次只服务一个客户端（顺序处理，iperf3 默认
    也是单测试模型，但 iperf3 有 `--json` 输出的异步 option）；后续引入

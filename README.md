@@ -119,12 +119,13 @@ moon run cmd/main -- -c <iperf3-host> -p 5201 -t 10
 -i, --interval <n>     报告间隔/秒（默认 1）
 -P, --parallel <n>     并行数据连接数（TCP，默认 1；UDP 单流）
 -u, --udp              使用 UDP
--b, --bitrate <n>[KMGT] 目标速率 bits/s（UDP 默认 1M）
+-b, --bitrate <n>[KMGT] 目标速率 bits/s（UDP 默认 1M，`-b 0` 不限速；TCP 同样生效）
 -l, --len <n>          块大小（TCP 默认 131072，UDP 8192）
 -n, --bytes <n>        发送 n 字节后停止
 -k, --blockcount <n>   发送 n 块后停止
 -O, --omit <n>         剔除前 n 秒（预热）
 -w, --window <n>       窗口大小（接受但未生效，需 setsockopt FFI）
+--get-server-output    回收服务器摘要（文本模式打印，-J 内嵌报告）
 -J, --json             JSON 输出（iperf3 报告结构）
 -v, --version          版本
 -h, --help             帮助
@@ -143,10 +144,14 @@ moon run cmd/main -- -c <iperf3-host> -p 5201 -t 10
   RFC 1889 计算抖动、按序号间隔统计丢包，最终汇总的丢包数按 iperf3 口径
   为发送端总数 − 接收端收到数。
 - **UDP 限速**：时间驱动的步进限速（对齐目标速率的 datagram 目标数），
-  见 `stats/interval.mbt` 的 `target_datagrams`（含 Int64 溢出防护）。
+  见 `stats/interval.mbt` 的 `target_datagrams`（含 Int64 溢出防护）；
+  TCP 传入 `-b` 时走同一调度器按块限速，`-b 0` 为不限速（iperf3 语义）。
+- **`--get-server-output`**：客户端在参数里请求后，服务器把最终摘要以
+  `server_output_text` 随结果 JSON 回传，文本模式打印、`-J` 内嵌报告；
+  与真实 iperf3 双向验证。
 - 时钟来自事件循环（毫秒精度），UDP 报文头的时间戳分辨率受此限制。
 
-## 已知限制（v0.1.1）
+## 已知限制（v0.1.2）
 
 - `-R`（反向模式）：协议状态机已实现且自互通通过，但 Windows 事件循环下
   已连接 UDP / 长写场景存在边界问题，暂时在 CLI 层禁用（路线图第一项，
@@ -162,7 +167,7 @@ moon run cmd/main -- -c <iperf3-host> -p 5201 -t 10
 
 ```bash
 moon check   # 类型检查（0 警告）
-moon test    # 33 个单元测试（协议编解码、RFC 1889 抖动、边界与格式化）
+moon test    # 36 个单元测试（协议编解码、RFC 1889 抖动、边界与格式化）
 moon build   # 构建 CLI
 ```
 

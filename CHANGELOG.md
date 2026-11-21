@@ -3,6 +3,26 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.2] - 2026-11-22
+
+### 新增
+
+- **TCP `-b` 限速**：与 UDP 共用时间驱动块步进调度器（`stats/target_datagrams`），
+  对齐 iperf3 的 TCP pacing；实测 `-b 10M` 报告 9.6 Mbit/s（±4%）。
+- **UDP `-b 0` 不限速**：遵循 iperf3 语义；未给 `-b` 时 UDP 仍默认 1 Mbit/s。
+- **`--get-server-output`**：客户端请求后，服务器把最终摘要以
+  `server_output_text` 随结果 JSON 回传（文本模式打印、`-J` 内嵌报告），
+  与真实 iperf3（3.1.3）双向验证。
+- `-p` 端口范围校验（1–65535），非法参数非零退出码拒绝。
+
+### 测试
+
+- 单元测试 33 → 36（server_output_text 往返、get_server_output 键存在语义、
+  限速哨兵值解析）；新增 10 例功能探针全通过；13 例互操作矩阵与 22 例边界
+  探针回归无变化。
+
+[0.1.2]: https://github.com/yiii0012/mooniperf/compare/0.1.1...0.1.2
+
 ## [0.1.1] - 2026-11-21
 
 ### 修复

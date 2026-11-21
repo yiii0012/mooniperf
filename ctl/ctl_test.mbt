@@ -288,3 +288,52 @@ test "stream ids follow iperf3's quirky iperf_add_stream sequence" {
   // Ordinals below 1 clamp to the first stream id instead of misbehaving.
   assert_eq(@ctl.stream_id(0), 1)
 }
+
+///|
+test "results JSON carries server_output_text only when requested" {
+  // Not requested -> empty string -> the key stays absent from the JSON,
+  // exactly like iperf3's send_results.
+  let r = @ctl.Results::single({
+    id: 1,
+    bytes: 1000L,
+    retransmits: -1L,
+    jitter: 0.0,
+    errors: -1L,
+    omitted_errors: 0L,
+    packets: -1L,
+    omitted_packets: 0L,
+    start_time: 0.0,
+    end_time: 5.0,
+  })
+  assert_eq(r.server_output_text, "")
+  assert_false(r.to_json().stringify().contains("server_output_text"))
+  // Requested -> the text round-trips through to_json/from_json.
+  let r2 : @ctl.Results = { ..r, server_output_text: "server summary\n" }
+  let text = r2.to_json().stringify()
+  assert_true(text.contains("\"server_output_text\""))
+  let j = match @ctl.decode_json_message_opt(@utf8.encode(text)) {
+    Some(x) => x
+    None => {
+      assert_true(false)
+      @ctl.jobj([])
+    }
+  }
+  let back = @ctl.Results::from_json(j)
+  assert_eq(back.server_output_text, "server summary\n")
+  // A peer payload without the key falls back to "" instead of failing.
+  let bare = @ctl.decode_json_message_opt(
+    @utf8.encode("{\"cpu_util_total\":0.0,\"streams\":[]}"),
+  )
+  match bare {
+    Some(x) => assert_eq(@ctl.Results::from_json(x).server_output_text, "")
+    None => assert_true(false)
+  }
+}
+
+///|
+test "params to_json sends get_server_output only when requested" {
+  let p = @ctl.Params::default_params()
+  assert_false(p.to_json().stringify().contains("get_server_output"))
+  p.get_server_output = 1
+  assert_true(p.to_json().stringify().contains("\"get_server_output\":1"))
+}

@@ -1,6 +1,6 @@
 ///|
 /// mooniperf CLI: an iperf3-compatible network throughput measurement tool.
-const USAGE : String = "Usage: mooniperf [-s | -c host] [options]\n\n  -s, --server           run in server mode\n  -c, --client <host>    run in client mode, connecting to <host>\n  -p, --port <n>         server port to listen on/connect to (default 5201)\n  -t, --time <n>         time in seconds to transmit for (default 10)\n  -i, --interval <n>     seconds between periodic reports (default 1)\n  -P, --parallel <n>     number of parallel client streams (default 1)\n  -R, --reverse          reverse mode (planned; not supported yet)\n  -u, --udp              use UDP rather than TCP\n  -b, --bitrate <n>[KMGT] target bitrate in bits/sec (UDP default 1M, TCP unlimited)\n  -l, --len <n>          length of buffer in bytes (TCP default 131072, UDP 8192)\n  -n, --bytes <n>        stop after n bytes\n  -k, --blockcount <n>   stop after n blocks\n  -O, --omit <n>         omit the first n seconds from results\n  -w, --window <n>       socket window size (accepted, not applied yet)\n  -J, --json             output in JSON format\n  -v, --version          show version information\n  -h, --help             show this message\n\nmooniperf is an iperf3-compatible tool written in pure MoonBit.\n"
+const USAGE : String = "Usage: mooniperf [-s | -c host] [options]\n\n  -s, --server           run in server mode\n  -c, --client <host>    run in client mode, connecting to <host>\n  -p, --port <n>         server port to listen on/connect to (default 5201)\n  -t, --time <n>         time in seconds to transmit for (default 10)\n  -i, --interval <n>     seconds between periodic reports (default 1)\n  -P, --parallel <n>     number of parallel client streams (default 1)\n  -R, --reverse          reverse mode (planned; not supported yet)\n  -u, --udp              use UDP rather than TCP\n  -b, --bitrate <n>[KMGT] target bitrate in bits/sec (UDP default 1M, 0 = unlimited; paces TCP too)\n  -l, --len <n>          length of buffer in bytes (TCP default 131072, UDP 8192)\n  -n, --bytes <n>        stop after n bytes\n  -k, --blockcount <n>   stop after n blocks\n  -O, --omit <n>         omit the first n seconds from results\n  -w, --window <n>       socket window size (accepted, not applied yet)\n  --get-server-output    receive the server's summary back (printed, or embedded in -J)\n  -J, --json             output in JSON format\n  -v, --version          show version information\n  -h, --help             show this message\n\nmooniperf is an iperf3-compatible tool written in pure MoonBit.\n"
 
 ///|
 /// Parse "-b 10M" style values: plain numbers or K/M/G suffixes (bits).
@@ -105,12 +105,14 @@ async fn main {
   let mut interval = 1.0
   let mut parallel = 1
   let mut udp = false
-  let mut bandwidth : Int64 = 0L
+  // -1 = not given (iperf3 defaults); 0 = unlimited; >0 = target bits/s.
+  let mut bandwidth : Int64 = -1L
   let mut blksize = 0
   let mut num_bytes : Int64 = 0L
   let mut blockcount : Int64 = 0L
   let mut omit = 0
   let mut window = 0
+  let mut get_server_output = false
   let mut json = false
   let mut bad : String? = None
   // argv[0] on native targets is the executable path; skip leading non-flag args.
@@ -217,6 +219,8 @@ async fn main {
         }
         None => bad = Some("\{a} requires a number")
       }
+    } else if a == "--get-server-output" {
+      get_server_output = true
     } else if a == "-J" || a == "--json" {
       json = true
     } else if a == "-v" || a == "--version" {
@@ -242,6 +246,9 @@ async fn main {
   }
   if server_mode && client_mode {
     @env.exit(fail("cannot be both a client and a server"))
+  }
+  if port < 1 || port > 65535 {
+    @env.exit(fail("port (-p) must be between 1 and 65535"))
   }
   if server_mode {
     @env.exit(@server.run_server(port))
@@ -289,6 +296,7 @@ async fn main {
     num_bytes,
     blockcount,
     window,
+    get_server_output,
     json,
   }
   let code = @client.run_client(cfg)

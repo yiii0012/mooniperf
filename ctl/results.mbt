@@ -33,6 +33,10 @@ pub(all) struct Results {
   /// Whether this side measured TCP retransmissions (iperf3 flag).
   sender_has_retransmits : Int64
   streams : Array[StreamResult]
+  /// The server's human-readable summary, sent when the client asked for
+  /// it (iperf3 `--get-server-output`); "" means absent — like iperf3, the
+  /// JSON key is omitted when empty.
+  server_output_text : String
 }
 
 ///|
@@ -44,6 +48,7 @@ pub fn Results::single(stream : StreamResult) -> Results {
     cpu_util_system: 0.0,
     sender_has_retransmits: 0L,
     streams: [stream],
+    server_output_text: "",
   }
 }
 
@@ -54,13 +59,19 @@ pub fn Results::to_json(self : Results) -> @json.Json {
     .iter()
     .map(fn(stream) { stream.to_json() })
     .collect()
-  jobj([
+  let fields : Array[(String, @json.Json)] = [
     ("cpu_util_total", jnum(self.cpu_util_total)),
     ("cpu_util_user", jnum(self.cpu_util_user)),
     ("cpu_util_system", jnum(self.cpu_util_system)),
     ("sender_has_retransmits", jnum64(self.sender_has_retransmits)),
     ("streams", jarr(streams)),
-  ])
+  ]
+  // iperf3 only includes server_output_json/server_output_text when the
+  // client requested them; an empty string keeps the key absent.
+  if self.server_output_text != "" {
+    fields.push(("server_output_text", jstr(self.server_output_text)))
+  }
+  jobj(fields)
 }
 
 ///|
@@ -106,6 +117,14 @@ fn get_i64(j : @json.Json, key : String, fallback : Int64) -> Int64 {
 }
 
 ///|
+fn get_str(j : @json.Json, key : String, fallback : String) -> String {
+  match obj_get(j, key) {
+    Some(@json.Json::String(s)) => s
+    _ => fallback
+  }
+}
+
+///|
 /// Parse an EXCHANGE_RESULTS JSON object (as sent by a real iperf3 peer).
 /// Missing fields fall back to neutral values.
 pub fn Results::from_json(j : @json.Json) -> Results {
@@ -123,6 +142,7 @@ pub fn Results::from_json(j : @json.Json) -> Results {
     cpu_util_system: get_num(j, "cpu_util_system", 0.0),
     sender_has_retransmits: get_i64(j, "sender_has_retransmits", 0L),
     streams,
+    server_output_text: get_str(j, "server_output_text", ""),
   }
 }
 

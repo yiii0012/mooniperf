@@ -13,7 +13,7 @@
 
 ///|
 /// Version string announced in parameters and reports.
-pub const VERSION : String = "mooniperf 0.1.1"
+pub const VERSION : String = "mooniperf 0.1.2"
 
 ///|
 pub(all) struct ClientConfig {
@@ -41,6 +41,8 @@ pub(all) struct ClientConfig {
   blockcount : Int64
   /// Window size (-w): accepted but not applied (no setsockopt yet).
   window : Int32
+  /// --get-server-output: ask the server to send its summary text back.
+  get_server_output : Bool
   /// JSON output (-J).
   json : Bool
 }
@@ -177,6 +179,9 @@ pub async fn run_client(cfg : ClientConfig) -> Int32 {
   let st = CStats::new()
   let q : @aqueue.Queue[CMsg] = @aqueue.Queue(kind=@aqueue.Kind::Unbounded)
   let rq : @async.Queue[RMsg] = @aqueue.Queue(kind=@aqueue.Kind::Unbounded)
+  // Effective send target: -b not given -> UDP 1 Mbit/s / TCP unlimited;
+  // -b 0 -> unlimited; -b >0 paces both UDP and TCP.
+  let br = send_bitrate(cfg.bandwidth, cfg.udp)
   let code = @async.with_task_group(g => {
     // --- data tasks ---
     if cfg.udp {
@@ -200,7 +205,7 @@ pub async fn run_client(cfg : ClientConfig) -> Int32 {
               addr,
               1,
               blksize,
-              params.bitrate(),
+              br,
               t0,
               deadline,
               per_stream_bytes,
@@ -218,7 +223,16 @@ pub async fn run_client(cfg : ClientConfig) -> Int32 {
           spawn_tcp_receiver(g, q, c, id, blksize)
         } else {
           spawn_tcp_sender(
-            g, q, c, id, deadline, blksize, per_stream_bytes, per_stream_blocks,
+            g,
+            q,
+            c,
+            id,
+            t0,
+            deadline,
+            blksize,
+            per_stream_bytes,
+            per_stream_blocks,
+            br,
           )
         }
         i += 1
@@ -275,6 +289,13 @@ pub async fn run_client(cfg : ClientConfig) -> Int32 {
           )
         } else {
           print_final(cfg, st, server_results, t0, end_t)
+          // --get-server-output: surface the server's own summary after
+          // ours, like iperf3 does (in -J mode it rides inside the report).
+          if cfg.get_server_output && server_results.server_output_text != "" {
+            println("")
+            println("Server output:")
+            println(server_results.server_output_text)
+          }
         }
         @wire.write_state(conn, @ctl.IPERF_DONE)
         conn.close()
@@ -294,6 +315,23 @@ fn effective_blksize(cfg : ClientConfig) -> Int32 {
     @ctl.DEFAULT_UDP_BLKSIZE
   } else {
     @ctl.DEFAULT_TCP_BLKSIZE
+  }
+}
+
+///|
+/// Resolve the effective send target from `-b` (bits/s).
+///
+/// `-1` (option not given) falls back to iperf3's defaults: 1 Mbit/s for
+/// UDP, unlimited for TCP. `0` means unlimited (iperf3 semantics, UDP
+/// included), and any positive value paces both UDP and TCP with the
+/// time-driven block schedule (`stats/target_datagrams`).
+fn send_bitrate(bandwidth : Int64, udp : Bool) -> Int64 {
+  if bandwidth >= 0L {
+    bandwidth
+  } else if udp {
+    @ctl.DEFAULT_UDP_BANDWIDTH
+  } else {
+    0L
   }
 }
 
@@ -326,8 +364,11 @@ fn build_params(cfg : ClientConfig, blksize : Int32) -> @ctl.Params {
   p.reverse = cfg.reverse
   p.window = cfg.window
   p.len = blksize
-  p.bandwidth = cfg.bandwidth
+  // iperf3 sends the bandwidth key only when the rate is set and non-zero
+  // (send_parameters); -b 0 stays absent on the wire.
+  p.bandwidth = if cfg.bandwidth > 0L { cfg.bandwidth } else { 0L }
   p.pacing_timer = @ctl.DEFAULT_PACING_TIMER
+  p.get_server_output = if cfg.get_server_output { 1 } else { 0 }
   p.client_version = VERSION
   p
 }
@@ -498,16 +539,19 @@ fn cleanup_streams(
 }
 
 ///|
-/// TCP sender (forward mode): unpaced bulk writes until the deadline/limits.
+/// TCP sender (forward mode): bulk writes until the deadline/limits, or
+/// time-driven block pacing when `-b > 0` is set (iperf3 paces TCP too).
 fn spawn_tcp_sender(
   g : @async.TaskGroup[Int32],
   q : @aqueue.Queue[CMsg],
   c : @socket.Tcp,
   id : Int32,
+  t0 : Int64,
   deadline : Int64,
   blksize : Int32,
   byte_limit : Int64,
   block_limit : Int64,
+  bitrate : Int64,
 ) -> Unit {
   g.spawn_bg(
     () => {
@@ -521,6 +565,21 @@ fn spawn_tcp_sender(
         }
         if block_limit > 0L && blocks >= block_limit {
           break
+        }
+        // Paced mode: send whatever the schedule allows right now, then
+        // sleep 1 ms and re-check (same scheme as the UDP sender).
+        if bitrate > 0L {
+          let elapsed = @async.now() - t0 + 1L
+          let target = @stats.target_datagrams(elapsed, bitrate, blksize)
+          if blocks >= target {
+            @async.sleep(1)
+            let now = @async.now()
+            if now - last > 50L {
+              q.put(CMsg::Prog(id, sent, blocks))
+              last = now
+            }
+            continue
+          }
         }
         c.write(pattern)
         sent += blksize.to_int64()
@@ -575,8 +634,9 @@ fn spawn_tcp_receiver(
 
 ///|
 /// UDP sender (forward mode): time-driven pacing towards the target bitrate.
-/// Uses an unconnected socket with sendto (connected UDP datagrams are not
-/// reliably delivered on the Windows event loop).
+/// `bitrate <= 0` means unlimited (`-b 0`): no pacing cap, burst straight
+/// through. Uses an unconnected socket with sendto (connected UDP datagrams
+/// are not reliably delivered on the Windows event loop).
 fn spawn_udp_sender(
   g : @async.TaskGroup[Int32],
   q : @aqueue.Queue[CMsg],
@@ -605,8 +665,13 @@ fn spawn_udp_sender(
         }
         // Send whatever the pacing schedule allows right now; at low rates
         // this is one datagram per interval, at high rates a small burst.
+        // Unlimited mode has no cap (the 1 MiB burst just repeats).
         let elapsed = @async.now() - t0 + 1L
-        let target = @stats.target_datagrams(elapsed, bitrate, blksize)
+        let target = if bitrate > 0L {
+          @stats.target_datagrams(elapsed, bitrate, blksize)
+        } else {
+          pcount + 1048576L
+        }
         while pcount < target && @async.now() < deadline {
           if byte_limit > 0L && sent >= byte_limit {
             break
@@ -851,6 +916,9 @@ fn client_results(cfg : ClientConfig, st : CStats, t0 : Int64) -> @ctl.Results {
     cpu_util_system: 0.0,
     sender_has_retransmits: 0L,
     streams,
+    // The client never rides its own summary in the results JSON; only
+    // the server does that (when --get-server-output was requested).
+    server_output_text: "",
   }
 }
 
