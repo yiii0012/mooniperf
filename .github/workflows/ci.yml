@@ -58,6 +58,11 @@ jobs:
           "$HOME/.moon/bin/moon" -C "$HOME/.moon/lib/core" bundle --warn-list -a --target wasm-gc --quiet
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
+      # Fresh runners have no registry index; moon check/test/build refuse to
+      # resolve moonbitlang/async until the index is fetched once.
+      - name: Update registry index
+        run: moon update
+
       - name: Check
         run: moon check
 
