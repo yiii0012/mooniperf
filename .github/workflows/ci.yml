@@ -9,30 +9,80 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      # Report every platform independently instead of cancelling the rest.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - name: Install MoonBit
+
+      # cli.moonbitlang.com answers 403 to default user agents, so we download
+      # the toolchain + core archives directly with an explicit "moon" UA and
+      # replicate what the official installers do (extract + bundle core).
+      - name: Install MoonBit (Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-          irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
-          echo "$HOME/.moon/bin" | Out-File -Append $env:GITHUB_PATH
+          $ErrorActionPreference = 'Stop'
+          $h = @{ 'User-Agent' = 'moon' }
+          $moonHome = Join-Path $HOME '.moon'
+          New-Item -ItemType Directory -Force -Path $moonHome | Out-Null
+          Invoke-WebRequest 'https://cli.moonbitlang.com/binaries/latest/moonbit-windows-x86_64.zip' -Headers $h -OutFile "$env:RUNNER_TEMP\moonbit.zip"
+          Expand-Archive "$env:RUNNER_TEMP\moonbit.zip" -DestinationPath $moonHome -Force
+          Invoke-WebRequest 'https://cli.moonbitlang.com/cores/core-latest.zip' -Headers $h -OutFile "$env:RUNNER_TEMP\core.zip"
+          Expand-Archive "$env:RUNNER_TEMP\core.zip" -DestinationPath (Join-Path $moonHome 'lib') -Force
+          Push-Location (Join-Path $moonHome 'lib\core')
+          & (Join-Path $moonHome 'bin\moon.exe') bundle --warn-list -a --all
+          & (Join-Path $moonHome 'bin\moon.exe') bundle --warn-list -a --target wasm-gc --quiet
+          Pop-Location
+          Add-Content $env:GITHUB_PATH "$moonHome\bin"
+
+      - name: Install MoonBit (Linux / macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ runner.os }}" in
+            Linux) target=linux-x86_64 ;;
+            macOS) target=darwin-aarch64 ;;
+            *) echo "unsupported runner os: ${{ runner.os }}"; exit 1 ;;
+          esac
+          mkdir -p "$HOME/.moon"
+          curl -fsSL -A moon "https://cli.moonbitlang.com/binaries/latest/moonbit-$target.tar.gz" -o /tmp/moonbit.tar.gz
+          tar xf /tmp/moonbit.tar.gz -C "$HOME/.moon"
+          curl -fsSL -A moon "https://cli.moonbitlang.com/cores/core-latest.tar.gz" -o /tmp/core.tar.gz
+          tar xf /tmp/core.tar.gz -C "$HOME/.moon/lib"
+          chmod +x "$HOME/.moon/bin/"*
+          chmod +x "$HOME/.moon/bin/internal/tcc" || true
+          "$HOME/.moon/bin/moon" -C "$HOME/.moon/lib/core" bundle --warn-list -a --all
+          "$HOME/.moon/bin/moon" -C "$HOME/.moon/lib/core" bundle --warn-list -a --target wasm-gc --quiet
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
       - name: Check
         run: moon check
+
       - name: Test
         run: moon test
+
       - name: Build
         run: moon build
-      - name: Loopback smoke test (TCP)
+
+      # The native binary is _build/native/debug/build/cmd/main/main(.exe);
+      # find it portably and exercise TCP, UDP and -J against itself.
+      - name: Loopback smoke test
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Recurse -Filter main.exe _build | Select-Object -First 1 -ExpandProperty FullName
-          $srv = Start-Process -FilePath $exe -ArgumentList '-s','-p','15201' -PassThru -WindowStyle Hidden
+          $exe = Get-ChildItem -Recurse -File _build |
+            Where-Object { $_.FullName -match '[/\\]build[/\\]cmd[/\\]main[/\\]main(\.exe)?$' } |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exe) { Write-Error 'built CLI not found'; exit 1 }
+          Write-Host "binary: $exe"
+          $srv = Start-Process -FilePath $exe -ArgumentList '-s','-p','15201' -PassThru
           Start-Sleep -Seconds 2
           & $exe -c 127.0.0.1 -p 15201 -t 2
           if ($LASTEXITCODE -ne 0) { exit 1 }
           & $exe -c 127.0.0.1 -p 15201 -u -b 2M -t 2
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $exe -c 127.0.0.1 -p 15201 -t 2 -J | Out-Null
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Stop-Process -Id $srv.Id -Force

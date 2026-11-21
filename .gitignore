@@ -3,6 +3,7 @@ target/
 _build/
 .mooncakes/
 .moon-lock
+pkg.generated.mbti
 
 # OS
 Thumbs.db
