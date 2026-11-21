@@ -95,13 +95,56 @@ x86/ARM 小端下即字节 `39 38 37 36`）；服务器从监听套接字 `recvf
   序号倒退计乱序并回冲一个先前计过的丢包。
 - 最终汇总的丢包数按 iperf3 口径为 `发送端总数 - 接收端收到数`。
 
-## 兼容性矩阵（已验证）
+## 兼容性矩阵（2026-11-21 实测）
+
+对照实现：iperf 3.1.3（iperf.fr 官方 Windows x64 构建，Cygwin），
+同一台机器回环双向对测，`✅` = 客户端进程退出码 0，双方完成参数交换、
+数据测量与结果交换。
 
 | 客户端 | 服务器 | 结果 |
 |---|---|---|
-| mooniperf | mooniperf | ✅ TCP / UDP / JSON |
-| mooniperf | 真实 iperf3 | 预期 ✅（协议按源码实现，待多平台验证） |
-| 真实 iperf3 | mooniperf | 预期 ✅（同上） |
+| mooniperf | mooniperf | ✅ TCP P1–P4 / UDP / `-J` / `-O` / `-n` |
+| mooniperf | 真实 iperf3 | ✅ TCP P1/P2/P3、UDP、`-J`、`-O`、`-n` |
+| 真实 iperf3 | mooniperf | ✅ TCP P1/P2/P3、UDP、`-J`、`-O` |
+
+已知的 v0.1 边界：第三方客户端 `-u -P>1`（多流 UDP）——多余流的握手会被
+mooniperf 应答、数据并入单流统计，但结果只回报一条流；mooniperf 自身
+`-u -P>1` 会钳制为单流并打印提示。
+
+### 让 iperf3 接受 mooniperf 报文的三个协议细节
+
+互调中踩到的坑，均已复刻进 mooniperf（评审可对照 iperf3 源码验证）：
+
+1. **流 id 序列是 1, 3, 4, 5…（不是 1, 2, 3…）**。
+   `iperf_add_stream`（src/iperf_api.c）给首条流 `id=1`，此后每条流的
+   `id = 2 + <链表中已有条数>`——游标从 2 起计数导致第 k 条流的 id 是
+   k+1。`EXCHANGE_RESULTS` 双方都按 `sp->id == sid` 校验，普通 1..N 编号
+   在 `-P > 1` 时触发 `stream has an invalid id`。iperf 3.1.3 客户端
+   `-P 3` 实测发出的 id 就是 `1, 3, 4`。mooniperf 用
+   `ctl/stream_id()` 复刻该序列，服务器还会优先回显客户端在结果 JSON 里
+   声明的 id，对 id 规则变化保持鲁棒。
+2. **参数 JSON 按"键存在"解析**。服务器的 `get_parameters` 对
+   `udp`/`reverse`/`get_server_output`/`udp_counters_64bit`/`nodelay`
+   等只判断 `cJSON_GetObjectItem(...) != NULL`，不看值——发送
+   `"udp": false` 会把测试切成 UDP，`"reverse": false` 会把测试切成反向。
+   iperf3 的 `send_parameters` 只在选项激活时发送对应键；mooniperf 的
+   `Params::to_json` 遵循同一约定。而 mooniperf 的 `Params::from_json`
+   是按值解析的宽容实现（同时接受 iperf3 与 mooniperf 的负载）。
+3. **数据连接 cookie 校验是 `strcmp`**（iperf_tcp_accept）：cookie 不匹配
+   时服务器在数据连接上回 `ACCESS_DENIED` 并 `close`，随后
+   `is_closed()`（select + EBADF）跳过建流——整个过程**静默**，不发
+   TEST_START 也不报错，客户端表现为无限等待。cookie 必须是 37 字节
+   （36 字符 + NUL）且与控制连接完全一致。
+
+### 其他观察（iperf 3.1.3 特性，mooniperf 已兼容）
+
+- 3.1.3 服务端结果里 `start_time`/`end_time` 为 0，客户端按收到的值显示
+  （`0.00-0.00 sec ... 0.00 bits/sec` 行）——mooniperf 忠实解析显示，
+  不做"修正"。
+- 3.1.3 的 cJSON `valueint` 是 32 位 int，单流 `bytes` 超过 2^31 后在
+  对端被截断；mooniperf 的 JSON 数字经 Double 中转，64 位计数不受影响。
+- UDP 多流客户端的每条流都会发握手报文；mooniperf 服务器对每条握手都
+  回应答并把数据并入单流统计。
 
 注意事项：
 
