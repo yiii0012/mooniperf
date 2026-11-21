@@ -11,20 +11,22 @@
 /// receiver's final accounting deterministic (its EOF-driven final push
 /// lands before the result exchange) without breaking the protocol.
 
+///|
 /// Version string announced in parameters and reports.
-pub const VERSION : String = "mooniperf 0.1.0"
+pub const VERSION : String = "mooniperf 0.1.1"
 
+///|
 pub(all) struct ClientConfig {
   host : String
-  port : Int
+  port : Int32
   /// Duration of the measured window in seconds (-t).
-  time : Int
+  time : Int32
   /// Warm-up seconds excluded from results (-O).
-  omit : Int
+  omit : Int32
   /// Interval length in seconds (-i).
   interval : Double
   /// Parallel streams (-P).
-  parallel : Int
+  parallel : Int32
   /// Reverse mode (-R): the server sends, we receive.
   reverse : Bool
   /// UDP test (-u).
@@ -32,34 +34,32 @@ pub(all) struct ClientConfig {
   /// UDP target bitrate in bits/s (-b); 0 = iperf3 default 1 Mbit/s.
   bandwidth : Int64
   /// Block size (-l); 0 = protocol default.
-  blksize : Int
+  blksize : Int32
   /// Total byte limit (-n); 0 = unlimited.
   num_bytes : Int64
   /// Total block limit (-k); 0 = unlimited.
   blockcount : Int64
   /// Window size (-w): accepted but not applied (no setsockopt yet).
-  window : Int
+  window : Int32
   /// JSON output (-J).
   json : Bool
 }
 
+///|
 /// Per-stream client-side counters, keyed by stream id.
 priv struct CStats {
-  bytes : Map[Int, Int64]
-  packets : Map[Int, Int64]
-  jitter : Map[Int, Double]
-  done : Map[Int, Bool]
+  bytes : Map[Int32, Int64]
+  packets : Map[Int32, Int64]
+  jitter : Map[Int32, Double]
+  done : Map[Int32, Bool]
 }
 
+///|
 fn CStats::new() -> CStats {
-  {
-    bytes: Map::new(),
-    packets: Map::new(),
-    jitter: Map::new(),
-    done: Map::new(),
-  }
+  { bytes: Map([]), packets: Map([]), jitter: Map([]), done: Map([]), }
 }
 
+///|
 /// Per-stream snapshot at the last interval boundary.
 priv struct LastSnap {
   t_ms : Int64
@@ -67,13 +67,15 @@ priv struct LastSnap {
   packets : Int64
 }
 
+///|
 fn LastSnap::new(t_ms : Int64, bytes : Int64, packets : Int64) -> LastSnap {
-  { t_ms, bytes, packets }
+  { t_ms, bytes, packets, }
 }
 
+///|
 /// A recorded reporting interval (for the `-J` report).
 priv struct IRecord {
-  socket : Int
+  socket : Int32
   start : Double
   end : Double
   bytes : Int64
@@ -81,27 +83,29 @@ priv struct IRecord {
   omitted : Bool
 }
 
+///|
 /// data tasks -> reporter task.
 priv enum CMsg {
-  Prog(Int, Int64, Int64)
-  UdpProg(Int, Int64, Int64, Double)
-  Done(Int)
+  Prog(Int32, Int64, Int64)
+  UdpProg(Int32, Int64, Int64, Double)
+  Done(Int32)
 }
 
+///|
 /// reporter task -> control task.
 priv enum RMsg {
   Final(CStats)
   Intervals(Array[IRecord])
 }
 
+///|
 /// Run a client test; returns the process exit code.
-pub async fn run_client(cfg : ClientConfig) -> Int {
-  if !(cfg.json) {
+pub async fn run_client(cfg : ClientConfig) -> Int32 {
+  if !cfg.json {
     println("Connecting to host \{cfg.host}, port \{cfg.port}")
   }
-  let addr = match (try Some(@socket.Addr::resolve(cfg.host, port=cfg.port)) catch {
-    _ => None
-  }) {
+  let addr = match
+    (Some(@socket.Addr::resolve(cfg.host, port=cfg.port)) catch { _ => None }) {
     Some(a) => a
     None => {
       println("iperf3: error - unable to resolve address \{cfg.host}")
@@ -113,14 +117,14 @@ pub async fn run_client(cfg : ClientConfig) -> Int {
   @wire.write_cookie(conn, cookie)
   let blksize = effective_blksize(cfg)
   // PARAM_EXCHANGE: answer with our parameters.
-  if !(expect_state(conn, @ctl.PARAM_EXCHANGE, cfg.json)) {
+  if !expect_state(conn, @ctl.PARAM_EXCHANGE, cfg.json) {
     conn.close()
     return 1
   }
   let params = build_params(cfg, blksize)
   @wire.write_json_msg(conn, params.to_json())
   // CREATE_STREAMS: open the data connections.
-  if !(expect_state(conn, @ctl.CREATE_STREAMS, cfg.json)) {
+  if !expect_state(conn, @ctl.CREATE_STREAMS, cfg.json) {
     conn.close()
     return 1
   }
@@ -138,12 +142,12 @@ pub async fn run_client(cfg : ClientConfig) -> Int {
   } else {
     let mut i = 0
     while i < cfg.parallel {
-          let c = @socket.Tcp::connect(addr)
-          @wire.write_cookie(c, cookie)
+      let c = @socket.Tcp::connect(addr)
+      @wire.write_cookie(c, cookie)
       streams.push(c)
-      if !(cfg.json) {
-        let id = 5 + i
-  println(
+      if !cfg.json {
+        let id = @ctl.stream_id(i + 1)
+        println(
           "[  \{id}] local \{c.addr().to_string()} connected to \{cfg.host} port \{cfg.port}",
         )
       }
@@ -151,17 +155,17 @@ pub async fn run_client(cfg : ClientConfig) -> Int {
     }
   }
   // TEST_START then TEST_RUNNING from the server.
-  if !(expect_state(conn, @ctl.TEST_START, cfg.json)) {
+  if !expect_state(conn, @ctl.TEST_START, cfg.json) {
     cleanup_streams(streams, udp_sock)
     conn.close()
     return 1
   }
-  if !(expect_state(conn, @ctl.TEST_RUNNING, cfg.json)) {
+  if !expect_state(conn, @ctl.TEST_RUNNING, cfg.json) {
     cleanup_streams(streams, udp_sock)
     conn.close()
     return 1
   }
-  if !(cfg.json) {
+  if !cfg.json {
     println("[ ID] Interval           Transfer     Bitrate")
   }
   let t0 = @async.now()
@@ -173,128 +177,117 @@ pub async fn run_client(cfg : ClientConfig) -> Int {
   let st = CStats::new()
   let q : @aqueue.Queue[CMsg] = @aqueue.Queue(kind=@aqueue.Kind::Unbounded)
   let rq : @async.Queue[RMsg] = @aqueue.Queue(kind=@aqueue.Kind::Unbounded)
-  let code = @async.with_task_group(
-    g => {
-      // --- data tasks ---
-      if cfg.udp {
-        match udp_sock {
-          Some(ds) =>
-            if cfg.reverse {
-              spawn_udp_receiver(
-                g,
-                q,
-                ds,
-                5,
-                blksize,
-                params.udp_counters_64bit == 1,
-                omit_end,
-              )
-            } else {
-              spawn_udp_sender(
-                g,
-                q,
-                ds,
-                addr,
-                5,
-                blksize,
-                params.bitrate(),
-                t0,
-                deadline,
-                per_stream_bytes,
-                per_stream_blocks,
-              )
-            }
-          None => ()
-        }
-      } else {
-        let mut i = 0
-        while i < streams.length() {
-          let c = streams[i]
+  let code = @async.with_task_group(g => {
+    // --- data tasks ---
+    if cfg.udp {
+      match udp_sock {
+        Some(ds) =>
           if cfg.reverse {
-            spawn_tcp_receiver(g, q, c, 5 + i, blksize)
-          } else {
-            spawn_tcp_sender(
+            spawn_udp_receiver(
               g,
               q,
-              c,
-              5 + i,
-              deadline,
+              ds,
+              1,
               blksize,
+              params.udp_counters_64bit == 1,
+              omit_end,
+            )
+          } else {
+            spawn_udp_sender(
+              g,
+              q,
+              ds,
+              addr,
+              1,
+              blksize,
+              params.bitrate(),
+              t0,
+              deadline,
               per_stream_bytes,
               per_stream_blocks,
             )
           }
-          i += 1
+        None => ()
+      }
+    } else {
+      let mut i = 0
+      while i < streams.length() {
+        let c = streams[i]
+        let id = @ctl.stream_id(i + 1)
+        if cfg.reverse {
+          spawn_tcp_receiver(g, q, c, id, blksize)
+        } else {
+          spawn_tcp_sender(
+            g, q, c, id, deadline, blksize, per_stream_bytes, per_stream_blocks,
+          )
+        }
+        i += 1
+      }
+    }
+    // --- reporter: the single consumer of the data queue ---
+    g.spawn_bg(
+      () => reporter_loop(q, rq, cfg, t0, deadline, omit_end),
+      no_wait=true,
+    )
+    // --- control task waits for the reporter's final report ---
+    let mut intervals : Array[IRecord] = []
+    let mut final_seen = false
+    while !final_seen && @async.now() < deadline + 5000L {
+      @async.sleep(50)
+      while true {
+        let r = rq.try_get() catch { _ => None }
+        match r {
+          Some(RMsg::Final(s)) => {
+            copy_stats(s, st)
+            final_seen = true
+          }
+          Some(RMsg::Intervals(recs)) => intervals = recs
+          None => break
         }
       }
-      // --- reporter: the single consumer of the data queue ---
-      g.spawn_bg(
-        () => {
-          reporter_loop(q, rq, cfg, t0, deadline, omit_end)
-        },
-        no_wait=true,
-      )
-      // --- control task waits for the reporter's final report ---
-      let mut intervals : Array[IRecord] = []
-      let mut final_seen = false
-      while !(final_seen) && @async.now() < deadline + 5000L {
-        @async.sleep(50)
-        while true {
-          let r = try rq.try_get() catch {
-            _ => None
-          }
-          match r {
-            Some(RMsg::Final(s)) => {
-              copy_stats(s, st)
-              final_seen = true
-            }
-            Some(RMsg::Intervals(recs)) => { intervals = recs }
-            None => break
-          }
-        }
-        if final_seen {
-          break
+      if final_seen {
+        break
+      }
+    }
+    // --- close data sockets, then TEST_END ---
+    cleanup_streams(streams, udp_sock)
+    @wire.write_state(conn, @ctl.TEST_END)
+    // --- EXCHANGE_RESULTS: client sends its results first ---
+    let code2 = if !expect_state(conn, @ctl.EXCHANGE_RESULTS, cfg.json) {
+      1
+    } else {
+      @wire.write_json_msg(conn, client_results(cfg, st, t0).to_json())
+      let server_results = match @wire.read_json_msg(conn) {
+        Some(j) => @ctl.Results::from_json(j)
+        None => {
+          println("iperf3: error - no server results received")
+          @ctl.Results::single(empty_stream())
         }
       }
-      // --- close data sockets, then TEST_END ---
-      cleanup_streams(streams, udp_sock)
-          @wire.write_state(conn, @ctl.TEST_END)
-      // --- EXCHANGE_RESULTS: client sends its results first ---
-          let code2 = if !(expect_state(conn, @ctl.EXCHANGE_RESULTS, cfg.json)) {
+      if !expect_state(conn, @ctl.DISPLAY_RESULTS, cfg.json) {
+        conn.close()
         1
       } else {
-        @wire.write_json_msg(conn, client_results(cfg, st, t0).to_json())
-        let server_results = match @wire.read_json_msg(conn) {
-          Some(j) => @ctl.Results::from_json(j)
-          None => {
-            println("iperf3: error - no server results received")
-            @ctl.Results::single(empty_stream())
-          }
-        }
-        if !(expect_state(conn, @ctl.DISPLAY_RESULTS, cfg.json)) {
-          conn.close()
-          1
+        let end_t = @async.now()
+        if cfg.json {
+          println(
+            build_json_report(cfg, st, intervals, server_results, t0, end_t).stringify(),
+          )
         } else {
-          let end_t = @async.now()
-          if cfg.json {
-            println(
-              build_json_report(cfg, st, intervals, server_results, t0, end_t).stringify(),
-            )
-          } else {
-            print_final(cfg, st, server_results, t0, end_t)
-          }
-          @wire.write_state(conn, @ctl.IPERF_DONE)
-          conn.close()
-          0
+          print_final(cfg, st, server_results, t0, end_t)
         }
+        @wire.write_state(conn, @ctl.IPERF_DONE)
+        conn.close()
+        0
       }
-      code2
-    },
-  )
+    }
+    code2
+  })
   code
 }
 
-fn effective_blksize(cfg : ClientConfig) -> Int {
+///|
+fn effective_blksize(cfg : ClientConfig) -> Int32 {
   if cfg.blksize > 0 {
     cfg.blksize
   } else if cfg.udp {
@@ -304,8 +297,9 @@ fn effective_blksize(cfg : ClientConfig) -> Int {
   }
 }
 
+///|
 /// Split a total limit across streams (at least 1 per stream).
-fn split_limit(total : Int64, streams : Int) -> Int64 {
+fn split_limit(total : Int64, streams : Int32) -> Int64 {
   if total <= 0L {
     return 0L
   }
@@ -318,10 +312,11 @@ fn split_limit(total : Int64, streams : Int) -> Int64 {
   }
 }
 
+///|
 /// Build the PARAM_EXCHANGE parameters from the client config.
-fn build_params(cfg : ClientConfig, blksize : Int) -> @ctl.Params {
+fn build_params(cfg : ClientConfig, blksize : Int32) -> @ctl.Params {
   let p = @ctl.Params::default_params()
-  p.tcp = !(cfg.udp)
+  p.tcp = !cfg.udp
   p.udp = cfg.udp
   p.omit = cfg.omit
   p.time = cfg.time
@@ -337,12 +332,15 @@ fn build_params(cfg : ClientConfig, blksize : Int) -> @ctl.Params {
   p
 }
 
-/// datagrams are not delivered) and do the announce/reply handshake.
-/// `UdpClient(addr)` binds an ephemeral port and connects to the peer.
+///|
+/// UDP announce/reply handshake towards `addr`. Uses an unconnected
+/// `UdpServer` socket with sendto/recvfrom because connected UDP datagrams
+/// are not reliably delivered on the Windows event loop.
 async fn udp_handshake(addr : @socket.Addr) -> @socket.UdpServer? {
-  let usock = match (try Some(@socket.UdpServer(@socket.Addr::parse("0.0.0.0:0"))) catch {
-    _ => None
-  }) {
+  let usock = match
+    (Some(@socket.UdpServer(@socket.Addr::parse("0.0.0.0:0"))) catch {
+      _ => None
+    }) {
     Some(d) => d
     None => return None
   }
@@ -352,14 +350,14 @@ async fn udp_handshake(addr : @socket.Addr) -> @socket.UdpServer? {
   } catch {
     _ => false
   }
-  if !(ok2) {
+  if !ok2 {
     usock.close()
     return None
   }
   let buf : FixedArray[Byte] = FixedArray::make(65536, b'\x00')
   let mut ready = false
   let mut tries = 0
-  while !(ready) && tries < 50 {
+  while !ready && tries < 50 {
     let (n, _) = usock.recvfrom(buf, max_len=65536)
     if n <= 0 {
       break
@@ -377,9 +375,10 @@ async fn udp_handshake(addr : @socket.Addr) -> @socket.UdpServer? {
   }
 }
 
+///|
 /// Read one state byte and handle the error states; `true` when the wanted
 /// state arrived.
-async fn expect_state(conn : @socket.Tcp, want : Int, json : Bool) -> Bool {
+async fn expect_state(conn : @socket.Tcp, want : Int32, json : Bool) -> Bool {
   match @wire.read_state(conn) {
     Some(s) =>
       if s == want {
@@ -388,7 +387,7 @@ async fn expect_state(conn : @socket.Tcp, want : Int, json : Bool) -> Bool {
         // -2 followed by two big-endian u32 words (i_errno, errno).
         match @wire.read_n(conn, 8) {
           Some(payload) => {
-            let (i_errno, errno) = @ctl.decode_server_error(payload)
+            let (i_errno, errno) = @ctl.decode_server_error_body(payload)
             println("iperf3: error - server error \{i_errno} (errno \{errno})")
             false
           }
@@ -401,7 +400,7 @@ async fn expect_state(conn : @socket.Tcp, want : Int, json : Bool) -> Bool {
         println("iperf3: error - the server is busy")
         false
       } else if s == @ctl.SERVER_TERMINATE {
-        if !(json) {
+        if !json {
           println("iperf3: the server terminated early")
         }
         false
@@ -416,6 +415,7 @@ async fn expect_state(conn : @socket.Tcp, want : Int, json : Bool) -> Bool {
   }
 }
 
+///|
 /// Absorb a data message into the stats maps.
 fn absorb(msg : CMsg, st : CStats) -> Unit {
   match msg {
@@ -430,16 +430,15 @@ fn absorb(msg : CMsg, st : CStats) -> Unit {
       st.jitter[id] = j
       st.done[id] = false
     }
-    CMsg::Done(id) => { st.done[id] = true }
+    CMsg::Done(id) => st.done[id] = true
   }
   ()
 }
 
+///|
 fn drain(q : @aqueue.Queue[CMsg], st : CStats) -> Unit {
   while true {
-    let r = try q.try_get() catch {
-      _ => None
-    }
+    let r = q.try_get() catch { _ => None }
     match r {
       Some(msg) => absorb(msg, st)
       None => break
@@ -448,6 +447,7 @@ fn drain(q : @aqueue.Queue[CMsg], st : CStats) -> Unit {
   ()
 }
 
+///|
 fn copy_stats(src : CStats, dst : CStats) -> Unit {
   for id in src.bytes.keys() {
     dst.bytes[id] = mget64(src.bytes, id, 0L)
@@ -464,6 +464,7 @@ fn copy_stats(src : CStats, dst : CStats) -> Unit {
   ()
 }
 
+///|
 fn total_bytes(st : CStats) -> Int64 {
   let mut t : Int64 = 0L
   for id in st.bytes.keys() {
@@ -472,6 +473,7 @@ fn total_bytes(st : CStats) -> Int64 {
   t
 }
 
+///|
 fn total_packets(st : CStats) -> Int64 {
   let mut t : Int64 = 0L
   for id in st.packets.keys() {
@@ -480,6 +482,7 @@ fn total_packets(st : CStats) -> Int64 {
   t
 }
 
+///|
 fn cleanup_streams(
   streams : Array[@socket.Tcp],
   udp_sock : @socket.UdpServer?,
@@ -494,14 +497,15 @@ fn cleanup_streams(
   ()
 }
 
+///|
 /// TCP sender (forward mode): unpaced bulk writes until the deadline/limits.
 fn spawn_tcp_sender(
-  g : @async.TaskGroup[Int],
+  g : @async.TaskGroup[Int32],
   q : @aqueue.Queue[CMsg],
   c : @socket.Tcp,
-  id : Int,
+  id : Int32,
   deadline : Int64,
-  blksize : Int,
+  blksize : Int32,
   byte_limit : Int64,
   block_limit : Int64,
 ) -> Unit {
@@ -535,13 +539,14 @@ fn spawn_tcp_sender(
   ()
 }
 
+///|
 /// TCP receiver (reverse mode): count until EOF.
 fn spawn_tcp_receiver(
-  g : @async.TaskGroup[Int],
+  g : @async.TaskGroup[Int32],
   q : @aqueue.Queue[CMsg],
   c : @socket.Tcp,
-  id : Int,
-  blksize : Int,
+  id : Int32,
+  blksize : Int32,
 ) -> Unit {
   g.spawn_bg(
     () => {
@@ -568,16 +573,17 @@ fn spawn_tcp_receiver(
   ()
 }
 
+///|
 /// UDP sender (forward mode): time-driven pacing towards the target bitrate.
 /// Uses an unconnected socket with sendto (connected UDP datagrams are not
 /// reliably delivered on the Windows event loop).
 fn spawn_udp_sender(
-  g : @async.TaskGroup[Int],
+  g : @async.TaskGroup[Int32],
   q : @aqueue.Queue[CMsg],
   ds : @socket.UdpServer,
   dst : @socket.Addr,
-  id : Int,
-  blksize : Int,
+  id : Int32,
+  blksize : Int32,
   bitrate : Int64,
   t0 : Int64,
   deadline : Int64,
@@ -633,23 +639,29 @@ fn spawn_udp_sender(
   ()
 }
 
+///|
 /// Patch the 12-byte datagram header into a send buffer (32-bit counters).
-fn stamp_datagram(buf : FixedArray[Byte], now_ms : Int64, pcount : Int64) -> Unit {
+fn stamp_datagram(
+  buf : FixedArray[Byte],
+  now_ms : Int64,
+  pcount : Int64,
+) -> Unit {
   let sec = (now_ms / 1000L).to_int()
-  let usec = ((now_ms % 1000L) * 1000L).to_int()
+  let usec = (now_ms % 1000L * 1000L).to_int()
   @ctl.put_u32_be(buf, 0, sec)
   @ctl.put_u32_be(buf, 4, usec)
   @ctl.put_u32_be(buf, 8, pcount.to_int())
   ()
 }
 
+///|
 /// UDP receiver (reverse mode): feed the RFC 1889 estimator.
 fn spawn_udp_receiver(
-  g : @async.TaskGroup[Int],
+  g : @async.TaskGroup[Int32],
   q : @aqueue.Queue[CMsg],
   ds : @socket.UdpServer,
-  id : Int,
-  blksize : Int,
+  id : Int32,
+  blksize : Int32,
   counters64 : Bool,
   omit_end : Int64,
 ) -> Unit {
@@ -680,11 +692,25 @@ fn spawn_udp_receiver(
         }
         let now = @async.now()
         if now - last > 50L {
-          q.put(CMsg::UdpProg(id, rcv.bytes_received, rcv.datagrams_received, rcv.jitter_ms()))
+          q.put(
+            CMsg::UdpProg(
+              id,
+              rcv.bytes_received,
+              rcv.datagrams_received,
+              rcv.jitter_ms(),
+            ),
+          )
           last = now
         }
       }
-      q.put(CMsg::UdpProg(id, rcv.bytes_received, rcv.datagrams_received, rcv.jitter_ms()))
+      q.put(
+        CMsg::UdpProg(
+          id,
+          rcv.bytes_received,
+          rcv.datagrams_received,
+          rcv.jitter_ms(),
+        ),
+      )
       q.put(CMsg::Done(id))
     },
     no_wait=true,
@@ -692,6 +718,7 @@ fn spawn_udp_receiver(
   ()
 }
 
+///|
 /// The reporter: single consumer of the data queue. Prints interval lines,
 /// records them for `-J`, and finally hands aggregates to the control task.
 async fn reporter_loop(
@@ -703,7 +730,7 @@ async fn reporter_loop(
   omit_end : Int64,
 ) -> Unit {
   let st = CStats::new()
-  let snaps : Map[Int, LastSnap] = Map::new()
+  let snaps : Map[Int32, LastSnap] = Map([])
   let records : Array[IRecord] = []
   let interval_ms = (cfg.interval * 1000.0).to_int64()
   let mut next = t0 + interval_ms
@@ -711,8 +738,7 @@ async fn reporter_loop(
     @async.sleep(25)
     drain(q, st)
     // Limits reached -> stop early like the senders do.
-    let limit_hit =
-      (cfg.num_bytes > 0L && total_bytes(st) >= cfg.num_bytes) ||
+    let limit_hit = (cfg.num_bytes > 0L && total_bytes(st) >= cfg.num_bytes) ||
       (cfg.blockcount > 0L && total_packets(st) >= cfg.blockcount)
     let now = @async.now()
     while now >= next && next < deadline {
@@ -730,7 +756,7 @@ async fn reporter_loop(
           @stats.Snapshot::new(prev.t_ms, prev.bytes, prev.packets),
           @stats.Snapshot::new(end, cur_bytes, cur_pkts),
         )
-        if !(omitted) && !(cfg.json) {
+        if !omitted && !cfg.json {
           let sb = StringBuilder()
           sb.write_string(
             @report.interval_prefix(
@@ -765,6 +791,7 @@ async fn reporter_loop(
   ()
 }
 
+///|
 /// Sender-side (or reverse receiver-side) results for EXCHANGE_RESULTS.
 fn client_results(cfg : ClientConfig, st : CStats, t0 : Int64) -> @ctl.Results {
   let streams : Array[@ctl.StreamResult] = []
@@ -824,9 +851,10 @@ fn client_results(cfg : ClientConfig, st : CStats, t0 : Int64) -> @ctl.Results {
   }
 }
 
+///|
 fn empty_stream() -> @ctl.StreamResult {
   {
-    id: 5,
+    id: 1,
     bytes: 0L,
     retransmits: -1L,
     jitter: 0.0,
@@ -839,25 +867,30 @@ fn empty_stream() -> @ctl.StreamResult {
   }
 }
 
+///|
 /// The iperf3 payload: a block filled with 'x' (0x78).
-fn make_payload(blksize : Int) -> Bytes {
+fn make_payload(blksize : Int32) -> Bytes {
   Bytes::from_array(FixedArray::make(blksize, b'x'))
 }
 
-fn mget64(m : Map[Int, Int64], k : Int, d : Int64) -> Int64 {
+///|
+fn mget64(m : Map[Int32, Int64], k : Int32, d : Int64) -> Int64 {
   match m.get(k) {
     Some(v) => v
     None => d
   }
 }
 
-fn mgetd(m : Map[Int, Double], k : Int, d : Double) -> Double {
+///|
+fn mgetd(m : Map[Int32, Double], k : Int32, d : Double) -> Double {
   match m.get(k) {
     Some(v) => v
     None => d
   }
 }
-fn mgetb(m : Map[Int, Bool], k : Int, d : Bool) -> Bool {
+
+///|
+fn mgetb(m : Map[Int32, Bool], k : Int32, d : Bool) -> Bool {
   match m.get(k) {
     Some(v) => v
     None => d

@@ -2,25 +2,29 @@
 /// cookies and raw reads. All functions return `None`-style failures instead
 /// of raising, so callers can unwind the protocol cleanly on disconnect.
 
+///|
 /// Write a bare state byte.
-pub async fn write_state(sock : @socket.Tcp, state : Int) -> Unit {
+pub async fn write_state(sock : @socket.Tcp, state : Int32) -> Unit {
   let b : FixedArray[Byte] = FixedArray::make(1, @ctl.state_to_byte(state))
   sock.write(Bytes::from_array(b))
 }
 
+///|
 /// Read a bare state byte. None = connection closed.
-pub async fn read_state(sock : @socket.Tcp) -> Int? {
+pub async fn read_state(sock : @socket.Tcp) -> Int32? {
   match read_n(sock, 1) {
     Some(b) => Some(@ctl.state_from_byte(b[0]))
     None => None
   }
 }
 
+///|
 /// Write a length-prefixed JSON message.
 pub async fn write_json_msg(sock : @socket.Tcp, json : @json.Json) -> Unit {
   sock.write(@ctl.encode_json_message(json))
 }
 
+///|
 /// Read a length-prefixed JSON message. None = connection closed or
 /// truncated/oversized payload.
 pub async fn read_json_msg(sock : @socket.Tcp) -> @json.Json? {
@@ -35,10 +39,7 @@ pub async fn read_json_msg(sock : @socket.Tcp) -> @json.Json? {
         Some(@ctl.jobj([]))
       } else {
         match read_n(sock, n) {
-          Some(body) =>
-            try Some(@ctl.decode_json_message(body)) catch {
-              _ => None
-            }
+          Some(body) => Some(@ctl.decode_json_message(body)) catch { _ => None }
           None => None
         }
       }
@@ -47,8 +48,9 @@ pub async fn read_json_msg(sock : @socket.Tcp) -> @json.Json? {
   }
 }
 
+///|
 /// Read exactly `n` bytes; None on EOF/truncation.
-pub async fn read_n(sock : @socket.Tcp, n : Int) -> Bytes? {
+pub async fn read_n(sock : @socket.Tcp, n : Int32) -> Bytes? {
   if n == 0 {
     return Some(b"")
   }
@@ -64,16 +66,19 @@ pub async fn read_n(sock : @socket.Tcp, n : Int) -> Bytes? {
   Some(Bytes::from_array(buf))
 }
 
+///|
 /// Read the 37-byte control cookie. None on EOF.
 pub async fn read_cookie(sock : @socket.Tcp) -> Bytes? {
   read_n(sock, @ctl.COOKIE_SIZE)
 }
 
+///|
 /// Write the 37-byte control cookie.
 pub async fn write_cookie(sock : @socket.Tcp, cookie : Bytes) -> Unit {
   sock.write(cookie)
 }
 
+///|
 /// Bytes equality helper for fixed-length comparisons.
 pub fn same_bytes(a : Bytes, b : Bytes) -> Bool {
   if a.length() != b.length() {
@@ -89,8 +94,9 @@ pub fn same_bytes(a : Bytes, b : Bytes) -> Bool {
   true
 }
 
+///|
 /// Copy the first `len` bytes of a receive buffer into an immutable Bytes.
-pub fn bytes_of(buf : FixedArray[Byte], len : Int) -> Bytes {
+pub fn bytes_of(buf : FixedArray[Byte], len : Int32) -> Bytes {
   let n = if len > buf.length() { buf.length() } else { len }
   let out : FixedArray[Byte] = FixedArray::make(n, b'\x00')
   let mut i = 0

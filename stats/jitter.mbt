@@ -2,6 +2,7 @@
 /// loss/out-of-order accounting — a faithful port of iperf3's receiver
 /// logic in src/iperf_udp.c.
 
+///|
 /// Accumulated receiver-side statistics for one UDP stream.
 pub(all) struct UdpReceiver {
   /// Highest datagram sequence number seen so far.
@@ -28,6 +29,7 @@ pub(all) struct UdpReceiver {
   mut datagrams_received : Int64
 }
 
+///|
 pub fn UdpReceiver::new() -> UdpReceiver {
   {
     packet_count: 0L,
@@ -43,6 +45,7 @@ pub fn UdpReceiver::new() -> UdpReceiver {
   }
 }
 
+///|
 /// Feed one datagram into the estimator.
 ///
 /// - `pcount` is the sequence number from the datagram header.
@@ -56,7 +59,7 @@ pub fn UdpReceiver::on_datagram(
   self : UdpReceiver,
   pcount : Int64,
   transit : Double,
-  size : Int,
+  size : Int32,
 ) -> Unit {
   self.bytes_received += size.to_int64()
   self.datagrams_received += 1L
@@ -81,7 +84,7 @@ pub fn UdpReceiver::on_datagram(
     return
   }
   if pcount > self.packet_count + 1L {
-    let gap = (pcount - 1L) - self.packet_count
+    let gap = pcount - 1L - self.packet_count
     if self.omitting {
       self.omitted_cnt_error += gap
     } else {
@@ -102,16 +105,19 @@ pub fn UdpReceiver::on_datagram(
   }
 }
 
+///|
 /// Move the accounting into/out of the omitted warm-up window.
 pub fn UdpReceiver::set_omitting(self : UdpReceiver, omitting : Bool) -> Unit {
   self.omitting = omitting
 }
 
+///|
 /// Jitter in milliseconds (iperf3 reports jitter * 1000).
 pub fn UdpReceiver::jitter_ms(self : UdpReceiver) -> Double {
   self.jitter * 1000.0
 }
 
+///|
 /// Average lost datagrams over the received window, as the receiver itself
 /// estimates it. The final iperf3-style summary instead derives loss from
 /// sender_sent - receiver_received; both are kept apart on purpose.
@@ -119,5 +125,5 @@ pub fn UdpReceiver::loss_percent(self : UdpReceiver) -> Double {
   if self.packet_count <= 0L {
     return 0.0
   }
-  (self.cnt_error.to_double() / self.packet_count.to_double()) * 100.0
+  self.cnt_error.to_double() / self.packet_count.to_double() * 100.0
 }

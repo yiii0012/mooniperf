@@ -1,48 +1,53 @@
+///|
 /// mooniperf CLI: an iperf3-compatible network throughput measurement tool.
+const USAGE : String = "Usage: mooniperf [-s | -c host] [options]\n\n  -s, --server           run in server mode\n  -c, --client <host>    run in client mode, connecting to <host>\n  -p, --port <n>         server port to listen on/connect to (default 5201)\n  -t, --time <n>         time in seconds to transmit for (default 10)\n  -i, --interval <n>     seconds between periodic reports (default 1)\n  -P, --parallel <n>     number of parallel client streams (default 1)\n  -R, --reverse          reverse mode (planned; not supported yet)\n  -u, --udp              use UDP rather than TCP\n  -b, --bitrate <n>[KMGT] target bitrate in bits/sec (UDP default 1M, TCP unlimited)\n  -l, --len <n>          length of buffer in bytes (TCP default 131072, UDP 8192)\n  -n, --bytes <n>        stop after n bytes\n  -k, --blockcount <n>   stop after n blocks\n  -O, --omit <n>         omit the first n seconds from results\n  -w, --window <n>       socket window size (accepted, not applied yet)\n  -J, --json             output in JSON format\n  -v, --version          show version information\n  -h, --help             show this message\n\nmooniperf is an iperf3-compatible tool written in pure MoonBit.\n"
 
-const USAGE : String = "Usage: mooniperf [-s | -c host] [options]\n\n  -s, --server           run in server mode\n  -c, --client <host>    run in client mode, connecting to <host>\n  -p, --port <n>         server port to listen on/connect to (default 5201)\n  -t, --time <n>         time in seconds to transmit for (default 10)\n  -i, --interval <n>     seconds between periodic reports (default 1)\n  -P, --parallel <n>     number of parallel client streams (default 1)\n  -R, --reverse          reverse mode: server sends, client receives\n  -u, --udp              use UDP rather than TCP\n  -b, --bitrate <n>[KMGT] target bitrate in bits/sec (UDP default 1M, TCP unlimited)\n  -l, --len <n>          length of buffer in bytes (TCP default 131072, UDP 8192)\n  -n, --bytes <n>        stop after n bytes\n  -k, --blockcount <n>   stop after n blocks\n  -O, --omit <n>         omit the first n seconds from results\n  -w, --window <n>       socket window size (accepted, not applied yet)\n  -J, --json             output in JSON format\n  -v, --version          show version information\n  -h, --help             show this message\n\nmooniperf is an iperf3-compatible tool written in pure MoonBit.\n"
-
+///|
 /// Parse "-b 10M" style values: plain numbers or K/M/G suffixes (bits).
 fn parse_rate(s : String) -> Int64? {
   if s.length() == 0 {
     return None
   }
-  let suffix = s.substring(start=s.length() - 1)
+  let suffix = s[s.length() - 1:].to_owned()
   let (num, mul) = match suffix {
-    "K" | "k" => (s.substring(end=s.length() - 1), 1000L)
-    "M" | "m" => (s.substring(end=s.length() - 1), 1000000L)
-    "G" | "g" => (s.substring(end=s.length() - 1), 1000000000L)
-    "T" | "t" => (s.substring(end=s.length() - 1), 1000000000000L)
+    "K" | "k" => (s[:s.length() - 1].to_owned(), 1000L)
+    "M" | "m" => (s[:s.length() - 1].to_owned(), 1000000L)
+    "G" | "g" => (s[:s.length() - 1].to_owned(), 1000000000L)
+    "T" | "t" => (s[:s.length() - 1].to_owned(), 1000000000000L)
     _ => (s, 1L)
   }
-  match (try Ok(@string.parse_int64(num)) catch { e => Err(e) }) {
+  match (Ok(@string.parse_int64(num)) catch { e => Err(e) }) {
     Ok(v) => Some(v * mul)
     Err(_) => None
   }
 }
 
+///|
 /// Parse a plain integer (bytes, blocks, seconds...).
-fn parse_int(s : String) -> Int? {
-  match (try Ok(@string.parse_int(s)) catch { e => Err(e) }) {
+fn parse_int(s : String) -> Int32? {
+  match (Ok(@string.parse_int(s)) catch { e => Err(e) }) {
     Ok(v) => Some(v)
     Err(_) => None
   }
 }
 
+///|
 fn parse_double(s : String) -> Double? {
-  match (try Ok(@string.parse_double(s)) catch { e => Err(e) }) {
+  match (Ok(@string.parse_double(s)) catch { e => Err(e) }) {
     Ok(v) => Some(v)
     Err(_) => None
   }
 }
 
-fn fail(msg : String) -> Int {
+///|
+fn fail(msg : String) -> Int32 {
   println("iperf3: error - \{msg}")
   println(USAGE)
   1
 }
 
-fn next_str(args : Array[String], i : Int) -> (String, Int)? {
+///|
+fn next_str(args : Array[String], i : Int32) -> (String, Int32)? {
   if i + 1 < args.length() {
     Some((args[i + 1], i + 1))
   } else {
@@ -50,8 +55,9 @@ fn next_str(args : Array[String], i : Int) -> (String, Int)? {
   }
 }
 
+///|
 /// Read the next argument as an Int, returning it and the new index.
-fn next_int(args : Array[String], i : Int) -> (Int, Int)? {
+fn next_int(args : Array[String], i : Int32) -> (Int32, Int32)? {
   match next_str(args, i) {
     Some((s, ni)) =>
       match parse_int(s) {
@@ -62,8 +68,9 @@ fn next_int(args : Array[String], i : Int) -> (Int, Int)? {
   }
 }
 
+///|
 /// Read the next argument as a Double, returning it and the new index.
-fn next_double(args : Array[String], i : Int) -> (Double, Int)? {
+fn next_double(args : Array[String], i : Int32) -> (Double, Int32)? {
   match next_str(args, i) {
     Some((s, ni)) =>
       match parse_double(s) {
@@ -74,8 +81,9 @@ fn next_double(args : Array[String], i : Int) -> (Double, Int)? {
   }
 }
 
+///|
 /// Read the next argument as an Int64 with optional K/M/G suffix.
-fn next_rate(args : Array[String], i : Int) -> (Int64, Int)? {
+fn next_rate(args : Array[String], i : Int32) -> (Int64, Int32)? {
   match next_str(args, i) {
     Some((s, ni)) =>
       match parse_rate(s) {
@@ -86,6 +94,7 @@ fn next_rate(args : Array[String], i : Int) -> (Int64, Int)? {
   }
 }
 
+///|
 async fn main {
   let args = @env.args()
   let mut server_mode = false
@@ -106,7 +115,7 @@ async fn main {
   let mut bad : String? = None
   // argv[0] on native targets is the executable path; skip leading non-flag args.
   let mut i = 0
-  if args.length() > 0 && args[0].substring(start=0, end=1) != "-" {
+  if args.length() > 0 && args[0][:1].to_owned() != "-" {
     i = 1
   }
   while i < args.length() {
@@ -155,7 +164,9 @@ async fn main {
         None => bad = Some("\{a} requires a number")
       }
     } else if a == "-R" || a == "--reverse" {
-      bad = Some("reverse mode (-R) is not supported yet; see docs/roadmap.md")
+      bad = Some(
+        "reverse mode (-R) is not supported yet; see docs/roadmap.md in the repository",
+      )
     } else if a == "-u" || a == "--udp" {
       udp = true
     } else if a == "-b" || a == "--bitrate" {
@@ -247,6 +258,12 @@ async fn main {
     let _ = fail("test duration must be at least 1 second")
     return
   }
+  if udp && parallel > 1 {
+    println(
+      "note: UDP mode uses a single stream in v0.1; ignoring -P \{parallel}",
+    )
+    parallel = 1
+  }
   let cfg : @client.ClientConfig = {
     host,
     port,
@@ -266,4 +283,3 @@ async fn main {
   let code = @client.run_client(cfg)
   @env.exit(code)
 }
-

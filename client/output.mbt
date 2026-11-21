@@ -1,5 +1,6 @@
 /// Final summary (human text) and the iperf3-compatible `-J` JSON @report.
 
+///|
 /// Human-readable final summary, iperf3 layout.
 fn print_final(
   cfg : ClientConfig,
@@ -12,13 +13,17 @@ fn print_final(
   let window = elapsed - cfg.omit.to_double()
   println("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -")
   if cfg.udp {
-    println("[ ID] Interval           Transfer     Bitrate         Jitter    Lost/Total  Lost%")
+    println(
+      "[ ID] Interval           Transfer     Bitrate         Jitter    Lost/Total  Lost%",
+    )
     for id in st.bytes.keys() {
       let bytes = mget64(st.bytes, id, 0L)
       let pkts = mget64(st.packets, id, 0L)
       let bps = @stats.bits_per_second(bytes, window)
       let sb = StringBuilder()
-      sb.write_string(@report.interval_prefix(id, cfg.omit.to_double(), elapsed))
+      sb.write_string(
+        @report.interval_prefix(id, cfg.omit.to_double(), elapsed),
+      )
       sb.write_string(@report.pad_right(@report.fmt_bytes(bytes), 13))
       sb.write_string(@report.fmt_bps(bps))
       sb.write_string("  0.000 ms  0/\{pkts} (0.00%)")
@@ -56,7 +61,9 @@ fn print_final(
       let bytes = mget64(st.bytes, id, 0L)
       let bps = @stats.bits_per_second(bytes, window)
       let sb = StringBuilder()
-      sb.write_string(@report.interval_prefix(id, cfg.omit.to_double(), elapsed))
+      sb.write_string(
+        @report.interval_prefix(id, cfg.omit.to_double(), elapsed),
+      )
       sb.write_string(@report.pad_right(@report.fmt_bytes(bytes), 13))
       sb.write_string(@report.fmt_bps(bps))
       sb.write_string(@report.pad_left("0", 8))
@@ -79,23 +86,40 @@ fn print_final(
   ()
 }
 
-fn jnum(v : Double) -> @json.Json { @ctl.jnum(v) }
+///|
+fn jnum(v : Double) -> @json.Json {
+  @ctl.jnum(v)
+}
 
-fn jnum64(v : Int64) -> @json.Json { @ctl.jnum64(v) }
+///|
+fn jnum64(v : Int64) -> @json.Json {
+  @ctl.jnum64(v)
+}
 
-fn jstr(v : String) -> @json.Json { @ctl.jstr(v) }
+///|
+fn jstr(v : String) -> @json.Json {
+  @ctl.jstr(v)
+}
 
-fn jbool(v : Bool) -> @json.Json { @ctl.jbool(v) }
+///|
+fn jbool(v : Bool) -> @json.Json {
+  @ctl.jbool(v)
+}
 
+///|
 fn pair(k : String, v : @json.Json) -> (String, @json.Json) {
   (k, v)
 }
 
-fn obj(fields : Array[(String, @json.Json)]) -> @json.Json { @ctl.jobj(fields) }
+///|
+fn obj(fields : Array[(String, @json.Json)]) -> @json.Json {
+  @ctl.jobj(fields)
+}
 
+///|
 /// Build a stream/sum entry with the TCP- or UDP-specific tail fields.
 fn stream_entry(
-  socket : Int,
+  socket : Int32,
   start : Double,
   end : Double,
   bytes : Int64,
@@ -138,6 +162,7 @@ fn stream_entry(
   obj(fields)
 }
 
+///|
 /// Interval record entry (subset of stream_entry, sender-side only).
 fn interval_entry(rec : IRecord, udp : Bool, sender : Bool) -> @json.Json {
   let bps = @stats.bits_per_second(rec.bytes, rec.end - rec.start)
@@ -163,6 +188,7 @@ fn interval_entry(rec : IRecord, udp : Bool, sender : Bool) -> @json.Json {
   obj(fields)
 }
 
+///|
 /// Build the `-J` report, following iperf3's top-level structure:
 /// start / intervals / end{streams, sum_sent, sum_received,
 /// cpu_utilization_percent, congestion-control strings}.
@@ -175,10 +201,9 @@ fn build_json_report(
   end_t : Int64,
 ) -> @json.Json {
   let elapsed = (end_t - t0).to_double() / 1000.0
-  let window = elapsed - cfg.omit.to_double()
   let recs = intervals
     .iter()
-    .map(fn(rec) { interval_entry(rec, cfg.udp, not(cfg.reverse)) })
+    .map(fn(rec) { interval_entry(rec, cfg.udp, !cfg.reverse) })
     .collect()
   // end.streams: client-side entries first (marked by our role), then the
   // remote side from the EXCHANGE_RESULTS payload.
@@ -190,7 +215,7 @@ fn build_json_report(
         cfg.omit.to_double(),
         elapsed,
         mget64(st.bytes, id, 0L),
-        not(cfg.reverse),
+        !cfg.reverse,
         cfg.udp,
         mget64(st.packets, id, 0L),
         mgetd(st.jitter, id, 0.0),
@@ -229,8 +254,6 @@ fn build_json_report(
     sent_packets - recv_packets
   }
   let sent_bytes = total_bytes(st)
-  let sent_bps = @stats.bits_per_second(sent_bytes, window)
-  let recv_bps = @stats.bits_per_second(recv_bytes, window)
   let cpu = obj([
     pair("host_total", jnum(0.0)),
     pair("host_user", jnum(0.0)),
@@ -248,7 +271,7 @@ fn build_json_report(
         cfg.omit.to_double(),
         elapsed,
         sent_bytes,
-        not(cfg.reverse),
+        !cfg.reverse,
         cfg.udp,
         sent_packets,
         0.0,

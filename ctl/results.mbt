@@ -1,10 +1,10 @@
+///|
 /// iperf3 EXCHANGE_RESULTS JSON payloads (src/iperf_api.c `send_results` /
 /// `get_results`). The client sends its results first, then reads the
 /// server's; the server does the reverse.
-
 pub(all) struct StreamResult {
   /// iperf3 stream id (its socket fd on the sending side).
-  id : Int
+  id : Int32
   /// Bytes sent (sender) or received (receiver) inside the measured window.
   bytes : Int64
   /// TCP retransmissions; -1 = not measured (e.g. non-Linux sender).
@@ -25,6 +25,7 @@ pub(all) struct StreamResult {
   end_time : Double
 }
 
+///|
 pub(all) struct Results {
   cpu_util_total : Double
   cpu_util_user : Double
@@ -34,6 +35,7 @@ pub(all) struct Results {
   streams : Array[StreamResult]
 }
 
+///|
 /// Build a Results containing one stream.
 pub fn Results::single(stream : StreamResult) -> Results {
   {
@@ -45,10 +47,10 @@ pub fn Results::single(stream : StreamResult) -> Results {
   }
 }
 
+///|
 /// Serialize into the EXCHANGE_RESULTS JSON object.
 pub fn Results::to_json(self : Results) -> @json.Json {
-  let streams = self
-    .streams
+  let streams = self.streams
     .iter()
     .map(fn(stream) { stream.to_json() })
     .collect()
@@ -61,6 +63,7 @@ pub fn Results::to_json(self : Results) -> @json.Json {
   ])
 }
 
+///|
 /// Serialize one stream result.
 pub fn StreamResult::to_json(self : StreamResult) -> @json.Json {
   jobj([
@@ -77,6 +80,7 @@ pub fn StreamResult::to_json(self : StreamResult) -> @json.Json {
   ])
 }
 
+///|
 /// Fetch a field of a JSON object by (dynamic) key.
 fn obj_get(j : @json.Json, key : String) -> @json.Json? {
   match j {
@@ -85,6 +89,7 @@ fn obj_get(j : @json.Json, key : String) -> @json.Json? {
   }
 }
 
+///|
 fn get_num(j : @json.Json, key : String, fallback : Double) -> Double {
   match obj_get(j, key) {
     Some(@json.Json::Number(v, ..)) => v
@@ -92,6 +97,7 @@ fn get_num(j : @json.Json, key : String, fallback : Double) -> Double {
   }
 }
 
+///|
 fn get_i64(j : @json.Json, key : String, fallback : Int64) -> Int64 {
   match obj_get(j, key) {
     Some(@json.Json::Number(v, ..)) => v.to_int64()
@@ -99,16 +105,16 @@ fn get_i64(j : @json.Json, key : String, fallback : Int64) -> Int64 {
   }
 }
 
+///|
 /// Parse an EXCHANGE_RESULTS JSON object (as sent by a real iperf3 peer).
 /// Missing fields fall back to neutral values.
 pub fn Results::from_json(j : @json.Json) -> Results {
   let streams : Array[StreamResult] = []
   match obj_get(j, "streams") {
-    Some(@json.Json::Array(items)) => {
+    Some(@json.Json::Array(items)) =>
       for item in items {
         streams.push(StreamResult::from_json(item))
       }
-    }
     _ => ()
   }
   {
@@ -120,6 +126,7 @@ pub fn Results::from_json(j : @json.Json) -> Results {
   }
 }
 
+///|
 fn StreamResult::from_json(j : @json.Json) -> StreamResult {
   {
     id: get_num(j, "id", 0.0).to_int(),
