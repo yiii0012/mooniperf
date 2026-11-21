@@ -231,32 +231,43 @@ async fn main {
     }
     i += 1
   }
+  // Argument errors must leave a NON-ZERO exit code on stderr semantics,
+  // like iperf3 (probed 2026-11-22: bare `return` exited 0).
   match bad {
-    Some(msg) => {
-      let _ = fail(msg)
-      return
-    }
+    Some(msg) => @env.exit(fail(msg))
     None => ()
   }
   if !(server_mode || client_mode) {
-    let _ = fail("must either be a client (-c) or server (-s)")
-    return
+    @env.exit(fail("must either be a client (-c) or server (-s)"))
   }
   if server_mode && client_mode {
-    let _ = fail("cannot be both a client and a server")
-    return
+    @env.exit(fail("cannot be both a client and a server"))
   }
   if server_mode {
-    let _ = @server.run_server(port)
-    return
+    @env.exit(@server.run_server(port))
   }
   if parallel < 1 || parallel > 128 {
-    let _ = fail("parallel streams must be between 1 and 128")
-    return
+    @env.exit(fail("parallel streams must be between 1 and 128"))
   }
   if time < 1 {
-    let _ = fail("test duration must be at least 1 second")
-    return
+    @env.exit(fail("test duration must be at least 1 second"))
+  }
+  // -i 0 would stall the periodic reporter (its next-report pointer never
+  // advances), and -l below the 12-byte UDP datagram header would write out
+  // of bounds — both rejected up front instead.
+  if interval <= 0.0 {
+    @env.exit(fail("report interval (-i) must be positive"))
+  }
+  if omit < 0 {
+    @env.exit(fail("omit seconds (-O) must not be negative"))
+  }
+  if blksize < 0 || blksize > 10 * 1024 * 1024 {
+    @env.exit(fail("block size (-l) must be between 1 and 10485760 bytes"))
+  }
+  if udp && blksize > 0 && blksize < @ctl.DATAGRAM_HEADER_SIZE {
+    @env.exit(
+      fail("UDP block size (-l) must be at least \{@ctl.DATAGRAM_HEADER_SIZE} bytes"),
+    )
   }
   if udp && parallel > 1 {
     println(

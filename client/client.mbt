@@ -732,7 +732,10 @@ async fn reporter_loop(
   let st = CStats::new()
   let snaps : Map[Int32, LastSnap] = Map([])
   let records : Array[IRecord] = []
+  // The CLI rejects -i <= 0; clamp here as defense in depth so the
+  // next-report pointer can never get stuck (interval 0 would loop forever).
   let interval_ms = (cfg.interval * 1000.0).to_int64()
+  let interval_ms = if interval_ms < 1L { 1L } else { interval_ms }
   let mut next = t0 + interval_ms
   while @async.now() < deadline {
     @async.sleep(25)
