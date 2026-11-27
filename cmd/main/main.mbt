@@ -273,7 +273,9 @@ async fn main {
   }
   if udp && blksize > 0 && blksize < @ctl.DATAGRAM_HEADER_SIZE {
     @env.exit(
-      fail("UDP block size (-l) must be at least \{@ctl.DATAGRAM_HEADER_SIZE} bytes"),
+      fail(
+        "UDP block size (-l) must be at least \{@ctl.DATAGRAM_HEADER_SIZE} bytes",
+      ),
     )
   }
   if udp && parallel > 1 {

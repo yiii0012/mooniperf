@@ -609,7 +609,9 @@ fn build_summary_text(
   end_s : Double,
 ) -> String {
   let out = StringBuilder()
-  out.write_string("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n")
+  out.write_string(
+    "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -\n",
+  )
   out.write_string("[ ID] Interval           Transfer     Bitrate\n")
   for id in st.bytes.keys() {
     let bytes = mget64(st.bytes, id, 0L)
