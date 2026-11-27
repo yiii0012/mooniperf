@@ -85,11 +85,14 @@ MoonIperf 说 iperf3 的线上协议（控制连接 JSON + 数据连接 + UDP �
 | 报告参数 | `-i 0.5` 小数间隔 + `-O 1` 预热，自互通 | 通过 |
 | CLI 误用 | 连不上端口、`-b 垃圾值`、`-s -c` 同用、缺模式、`-i 0`、UDP `-l 4` | 均以非零退出码拒绝 |
 
-单元测试另有 33 项覆盖：封帧编解码、cookie、流 id 序列、限速解析（含
+单元测试另有 39 项覆盖：封帧编解码、cookie、流 id 序列、限速解析（含
 K/M/G/T 与越界拒绝）、Int64 溢出防护、RFC 1889 抖动/乱序、JSON 结果
 编解码与格式化。
 
 ## 快速开始
+
+环境要求：[MoonBit 工具链](https://www.moonbitlang.com/download/)，
+`moonc` 版本不低于 **1.0.0-rc1**（`moonc -v` 可查看）。
 
 ```bash
 # 从 mooncakes 安装（作为库/CLI 依赖）
@@ -104,6 +107,21 @@ moon run cmd/main -- -c 127.0.0.1 -p 5201 -t 2 -J       # JSON 输出
 # 与真实 iperf3 互操作
 iperf3 -s -p 5201
 moon run cmd/main -- -c <iperf3-host> -p 5201 -t 10
+```
+
+最小使用样例（TCP 2 秒自测）的预期输出形态：
+
+```text
+Connecting to host 127.0.0.1, port 5201
+[  1] local 127.0.0.1:xxxxx connected to 127.0.0.1 port 5201
+[ ID] Interval           Transfer     Bitrate
+[  1]   0.00-1.00   sec  2.30 GBytes  19.8 Gbits/sec
+[  1]   1.00-2.00   sec  2.36 GBytes  20.3 Gbits/sec
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+[  1]   0.00-2.00   sec  4.66 GBytes  20.0 Gbits/sec                  sender
+[  1]   0.00-2.00   sec  4.66 GBytes  20.0 Gbits/sec                  receiver
+
+iperf Done.
 ```
 
 也可以 `moon build` 后直接运行
@@ -151,7 +169,7 @@ moon run cmd/main -- -c <iperf3-host> -p 5201 -t 10
   与真实 iperf3 双向验证。
 - 时钟来自事件循环（毫秒精度），UDP 报文头的时间戳分辨率受此限制。
 
-## 已知限制（v0.1.2）
+## 已知限制（v0.1.3）
 
 - `-R`（反向模式）：协议状态机已实现且自互通通过，但 Windows 事件循环下
   已连接 UDP / 长写场景存在边界问题，暂时在 CLI 层禁用（路线图第一项，
@@ -167,7 +185,7 @@ moon run cmd/main -- -c <iperf3-host> -p 5201 -t 10
 
 ```bash
 moon check   # 类型检查（0 警告）
-moon test    # 36 个单元测试（协议编解码、RFC 1889 抖动、边界与格式化）
+moon test    # 39 个单元测试（协议编解码、RFC 1889 抖动、边界与格式化）
 moon build   # 构建 CLI
 ```
 
