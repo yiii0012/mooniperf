@@ -16,6 +16,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # moonbitlang/async's Windows C stubs require the MSVC toolchain
+      # (event_bus.c errors out under MinGW); point the job at the
+      # preinstalled VS build tools, matching the official async repo CI.
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Disable auto CRLF (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: git config --global core.autocrlf false
+
       # cli.moonbitlang.com answers 403 to default user agents, so we download
       # the toolchain + core archives directly with an explicit "moon" UA and
       # replicate what the official installers do (extract + bundle core).
@@ -62,6 +74,11 @@ jobs:
       # resolve moonbitlang/async until the index is fetched once.
       - name: Update registry index
         run: moon update
+
+      # The project targets moonc >= 1.0.0-rc1; print the compiler the CI
+      # resolved so the requirement is traceable on every run.
+      - name: Print toolchain version
+        run: moonc -v
 
       - name: Check
         run: moon check
