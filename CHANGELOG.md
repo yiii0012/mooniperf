@@ -3,6 +3,31 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.3] - 2026-11-28
+
+### 变更
+
+- **工具链基线提升到 moonc 1.0.0-rc1**：`moon check` / `moon test` /
+  `moon build` 全部在 moonc 1.0.0-rc1（2026-11-26）下验证通过；
+  CI 在每次运行中打印解析到的编译器版本以便追溯。
+- CI（Windows）：moonbitlang/async 的 Windows C stub 需要 MSVC 工具链
+  （MinGW 下 `event_bus.c` 直接 `#error`），CI 显式挂载 runner 预装的
+  VS 构建环境（`ilammy/msvc-dev-cmd`），与 moonbitlang/async 官方 CI 一致；
+  同时关闭 Windows 检出的自动 CRLF。
+- 源码统一用 1.0.0-rc1 工具链的 `moon fmt` 重新格式化（纯风格，无语义变化）。
+
+### 测试
+
+- 单元测试 36 → 39：新增 `wire` 包纯函数测试（cookie/字节比较语义、
+  `bytes_of` 的越界钳制）与 `Params::bitrate` 的 iperf3 限速默认值语义
+  （`-b` 未给 / `-b 0` / 显式速率、预热窗口折算）。
+
+### 修复
+
+- 文档：修正 `ctl_test.mbt` 头注释里残留的旧模块名。
+
+[0.1.3]: https://github.com/yiii0012/mooniperf/compare/0.1.2...0.1.3
+
 ## [0.1.2] - 2026-11-22
 
 ### 新增

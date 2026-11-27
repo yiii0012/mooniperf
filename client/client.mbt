@@ -13,7 +13,7 @@
 
 ///|
 /// Version string announced in parameters and reports.
-pub const VERSION : String = "mooniperf 0.1.2"
+pub const VERSION : String = "mooniperf 0.1.3"
 
 ///|
 pub(all) struct ClientConfig {
@@ -199,17 +199,7 @@ pub async fn run_client(cfg : ClientConfig) -> Int32 {
             )
           } else {
             spawn_udp_sender(
-              g,
-              q,
-              ds,
-              addr,
-              1,
-              blksize,
-              br,
-              t0,
-              deadline,
-              per_stream_bytes,
-              per_stream_blocks,
+              g, q, ds, addr, 1, blksize, br, t0, deadline, per_stream_bytes, per_stream_blocks,
             )
           }
         None => ()
@@ -223,15 +213,7 @@ pub async fn run_client(cfg : ClientConfig) -> Int32 {
           spawn_tcp_receiver(g, q, c, id, blksize)
         } else {
           spawn_tcp_sender(
-            g,
-            q,
-            c,
-            id,
-            t0,
-            deadline,
-            blksize,
-            per_stream_bytes,
-            per_stream_blocks,
+            g, q, c, id, t0, deadline, blksize, per_stream_bytes, per_stream_blocks,
             br,
           )
         }
