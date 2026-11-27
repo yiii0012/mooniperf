@@ -1,5 +1,5 @@
 ///|
-/// Unit tests for the wire-protocol codecs in `iyi/mooniperf/ctl`.
+/// Unit tests for the wire-protocol codecs in `yiii0012/mooniperf/ctl`.
 /// All values are cross-checked against iperf3's src/iperf_api.{h,c},
 /// src/iperf_udp.c and the wire captures documented in docs/protocol.md.
 test "state bytes round-trip through the signed single-byte wire format" {
@@ -308,7 +308,7 @@ test "results JSON carries server_output_text only when requested" {
   assert_eq(r.server_output_text, "")
   assert_false(r.to_json().stringify().contains("server_output_text"))
   // Requested -> the text round-trips through to_json/from_json.
-  let r2 : @ctl.Results = { ..r, server_output_text: "server summary\n" }
+  let r2 : @ctl.Results = { ..r, server_output_text: "server summary\n", }
   let text = r2.to_json().stringify()
   assert_true(text.contains("\"server_output_text\""))
   let j = match @ctl.decode_json_message_opt(@utf8.encode(text)) {
@@ -336,4 +336,27 @@ test "params to_json sends get_server_output only when requested" {
   assert_false(p.to_json().stringify().contains("get_server_output"))
   p.get_server_output = 1
   assert_true(p.to_json().stringify().contains("\"get_server_output\":1"))
+}
+
+///|
+test "bitrate resolution mirrors iperf3 defaults and -b 0 semantics" {
+  // UDP without an explicit rate falls back to iperf3's 1 Mbit/s default.
+  assert_eq(@ctl.Params::default_params().bitrate(), 0L)
+  let u = @ctl.Params::default_params()
+  u.udp = true
+  assert_eq(u.bitrate(), 1000000L)
+  // An explicit positive rate wins for either protocol...
+  u.bandwidth = 5000000L
+  assert_eq(u.bitrate(), 5000000L)
+  let t = @ctl.Params::default_params()
+  t.bandwidth = 5000000L
+  assert_eq(t.bitrate(), 5000000L)
+  // ...while a bandwidth of 0 (the key is absent on the wire then) falls
+  // back to the UDP default on the receiving side.
+  u.bandwidth = 0L
+  assert_eq(u.bitrate(), 1000000L)
+  // total_seconds folds the omitted warm-up window into the deadline.
+  t.omit = 2
+  t.time = 5
+  assert_eq(t.total_seconds(), 7)
 }
