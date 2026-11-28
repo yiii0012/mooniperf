@@ -13,6 +13,17 @@ MI=$1
 I3=$2
 PORT=${3:-15601}
 
+# Fail fast with a clear message if the binaries do not look runnable —
+# e.g. when a build-artifact glob hands us a .core file instead of the CLI.
+if [ ! -x "$MI" ]; then
+  echo "mooniperf binary not executable: $MI" >&2
+  exit 2
+fi
+if [ ! -x "$I3" ]; then
+  echo "iperf3 binary not executable: $I3" >&2
+  exit 2
+fi
+
 pass=0
 fail=0
 

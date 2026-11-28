@@ -92,7 +92,7 @@ jobs:
 
       - name: Cross-implementation interop matrix
         run: |
-          exe=$(find _build -type f -path '*build/cmd/main/main*' | head -1)
+          exe=$(find _build -type f -path '*build/cmd/main/main.exe' | head -1)
           if [ -z "$exe" ]; then echo 'built CLI not found'; exit 1; fi
           echo "binary: $exe"
           bash scripts/interop.sh "$exe" "$(command -v iperf3)" 15601
