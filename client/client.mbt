@@ -13,7 +13,7 @@
 
 ///|
 /// Version string announced in parameters and reports.
-pub const VERSION : String = "mooniperf 0.1.3-pre"
+pub const VERSION : String = "mooniperf 0.1.4"
 
 ///|
 pub(all) struct ClientConfig {

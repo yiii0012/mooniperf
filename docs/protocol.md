@@ -34,6 +34,16 @@ iperf3 的 cookie 是 36 个随机字符 + NUL）。cookie 只用于自洽校验
 | ACCESS_DENIED | -1 | S→数据连接 | cookie 不匹配 |
 | SERVER_ERROR | -2 | S→C + 两个大端 u32（i_errno, errno） | 服务器出错 |
 
+`SERVER_ERROR` 的 `i_errno` 取值来自 iperf3 `src/iperf_api.h` 的
+`enum i_errno`（客户端按 `iperf_strerror` 渲染成人类可读文案，mooniperf
+在 `ctl/ierrno.mbt` 内置了同一套文案）。mooniperf 服务器在参数交换阶段
+读取参数 JSON 失败时，会先回 `SERVER_ERROR + (114/IERECVPARAMS, 0)`
+再断开，与 iperf3 服务器一致；mooniperf 客户端把该文案原样打印。
+ mooniperf CLI 亦复刻了 iperf3 的参数校验语义：
+`-t/-n/-k` 至多给出一个端条件（否则 `i_errno=16/IEENDCONDITIONS`）、
+单位后缀倍率（`-b` 十进制、字节数类二进制，见 `cmd/main/main.mbt`
+的 `parse_rate`/`parse_bytes`）。
+
 ### 正向模式（TCP）消息时序
 
 ```
