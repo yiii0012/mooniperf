@@ -100,6 +100,12 @@ async fn handle_test(
   let params_json = match @wire.read_json_msg(conn) {
     Some(j) => j
     None => {
+      // The peer hung up or sent a truncated payload during the parameter
+      // exchange. Report it the way iperf3 does — SERVER_ERROR followed by
+      // (i_errno=IERECVPARAMS, errno) — instead of closing silently, so a
+      // protocol-aware client can print a real message.
+      @wire.write_state(conn, @ctl.SERVER_ERROR)
+      conn.write(@ctl.encode_server_error_body(114, 0))
       conn.close()
       return
     }
