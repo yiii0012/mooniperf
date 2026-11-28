@@ -11,8 +11,11 @@ pub const DEFAULT_TCP_BLKSIZE : Int32 = 131072
 pub const DEFAULT_UDP_BLKSIZE : Int32 = 8192
 
 ///|
-/// iperf3 default UDP send rate (-b), 1 Mbit/s.
-pub const DEFAULT_UDP_BANDWIDTH : Int64 = 1000000L
+/// iperf3 default UDP send rate (-b). iperf3 defines UDP_RATE as
+/// 1024 * 1024 bits/s (src/iperf.h, "1 Mbps" in its binary convention), so
+/// the exact value is 1048576 — the default -u run reports ~1.05 Mbits/s
+/// on both iperf3 and mooniperf.
+pub const DEFAULT_UDP_BANDWIDTH : Int64 = 1048576L
 
 ///|
 /// iperf3 default pacing timer granularity (ms).
