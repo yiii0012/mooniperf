@@ -13,7 +13,7 @@
 
 ///|
 /// Version string announced in parameters and reports.
-pub const VERSION : String = "mooniperf 0.1.3"
+pub const VERSION : String = "mooniperf 0.1.3-pre"
 
 ///|
 pub(all) struct ClientConfig {
@@ -110,7 +110,7 @@ pub async fn run_client(cfg : ClientConfig) -> Int32 {
     (Some(@socket.Addr::resolve(cfg.host, port=cfg.port)) catch { _ => None }) {
     Some(a) => a
     None => {
-      println("iperf3: error - unable to resolve address \{cfg.host}")
+      err_line(cfg.json, "unable to resolve address \{cfg.host}")
       return 1
     }
   }
@@ -136,7 +136,7 @@ pub async fn run_client(cfg : ClientConfig) -> Int32 {
     match udp_handshake(addr) {
       Some(ds) => udp_sock = Some(ds)
       None => {
-        println("iperf3: error - UDP handshake failed")
+        err_line(cfg.json, "UDP handshake failed")
         conn.close()
         return 1
       }
@@ -256,7 +256,7 @@ pub async fn run_client(cfg : ClientConfig) -> Int32 {
       let server_results = match @wire.read_json_msg(conn) {
         Some(j) => @ctl.Results::from_json(j)
         None => {
-          println("iperf3: error - no server results received")
+          err_line(cfg.json, "no server results received")
           @ctl.Results::single(empty_stream())
         }
       }
@@ -399,6 +399,18 @@ async fn udp_handshake(addr : @socket.Addr) -> @socket.UdpServer? {
 }
 
 ///|
+/// Print a runtime error line: plain "iperf3: error - ..." text, or a
+/// machine-readable {"error": ...} JSON object in -J mode (iperf3 routes
+/// errors through iperf_err, which emits JSON when output is JSON).
+fn err_line(json : Bool, msg : String) -> Unit {
+  if json {
+    println(@ctl.jobj([("error", @ctl.jstr(msg))]).stringify())
+  } else {
+    println("iperf3: error - \{msg}")
+  }
+}
+
+///|
 /// Read one state byte and handle the error states; `true` when the wanted
 /// state arrived.
 async fn expect_state(conn : @socket.Tcp, want : Int32, json : Bool) -> Bool {
@@ -407,32 +419,35 @@ async fn expect_state(conn : @socket.Tcp, want : Int32, json : Bool) -> Bool {
       if s == want {
         true
       } else if s == @ctl.SERVER_ERROR {
-        // -2 followed by two big-endian u32 words (i_errno, errno).
+        // -2 followed by two big-endian u32 words (i_errno, errno). The
+        // i_errno is an iperf3 wire code; render its documented text like
+        // iperf3's iperf_strerror would.
         match @wire.read_n(conn, 8) {
           Some(payload) => {
             let (i_errno, errno) = @ctl.decode_server_error_body(payload)
-            println("iperf3: error - server error \{i_errno} (errno \{errno})")
+            match @ctl.i_errno_to_text(i_errno) {
+              Some(text) => err_line(json, text)
+              None => err_line(json, "server error \{i_errno} (errno \{errno})")
+            }
             false
           }
           None => {
-            println("iperf3: error - server closed the control connection")
+            err_line(json, "server closed the control connection")
             false
           }
         }
       } else if s == @ctl.ACCESS_DENIED {
-        println("iperf3: error - the server is busy")
+        err_line(json, "the server is busy running a test. try again later")
         false
       } else if s == @ctl.SERVER_TERMINATE {
-        if !json {
-          println("iperf3: the server terminated early")
-        }
+        err_line(json, "the server has terminated")
         false
       } else {
-        println("iperf3: error - unexpected state \{s}")
+        err_line(json, "unexpected state \{s}")
         false
       }
     None => {
-      println("iperf3: error - control connection closed")
+      err_line(json, "control connection closed")
       false
     }
   }

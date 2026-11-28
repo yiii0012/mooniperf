@@ -111,6 +111,18 @@ pub fn encode_server_error(i_errno : Int32, errno : Int32) -> Bytes {
 }
 
 ///|
+/// Encode the SERVER_ERROR *body*: the 8 bytes that follow the state byte
+/// on the wire (two big-endian u32 words: i_errno, errno). Writers that
+/// already sent the state byte — like the server's control loop — use this
+/// variant instead of re-sending a full 9-byte frame.
+pub fn encode_server_error_body(i_errno : Int32, errno : Int32) -> Bytes {
+  let out : FixedArray[Byte] = FixedArray::make(8, b'\x00')
+  put_u32_be(out, 0, i_errno)
+  put_u32_be(out, 4, errno)
+  Bytes::from_array(out)
+}
+
+///|
 /// Decode a SERVER_ERROR frame: the full 9-byte payload consisting of the
 /// state byte followed by two big-endian u32 words (i_errno, errno).
 pub fn decode_server_error(payload : Bytes) -> (Int32, Int32) {

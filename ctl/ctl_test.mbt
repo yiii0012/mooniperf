@@ -233,6 +233,42 @@ test "server error body decodes the 8 bytes after the state byte" {
   let (i2, e2) = @ctl.decode_server_error_body(Bytes::from_array(tail_buf))
   assert_eq(i2, 5)
   assert_eq(e2, 111)
+  // The body encoder produces the same 8 bytes (writers that already sent
+  // the state byte use it).
+  let encoded = @ctl.encode_server_error_body(5, 111)
+  assert_eq(encoded.length(), 8)
+  let mut j = 0
+  let mut same = true
+  while j < 8 {
+    if encoded[j] != buf[j] {
+      same = false
+    }
+    j += 1
+  }
+  assert_true(same)
+}
+
+///|
+test "i_errno texts match iperf3's iperf_strerror wording" {
+  // Spot checks against iperf3 3.1.3 src/iperf_error.c: the codes a peer
+  // is most likely to send over the wire.
+  assert_eq(
+    @ctl.i_errno_to_text(16),
+    Some("only one test end condition (-t, -n, -k) may be specified"),
+  )
+  assert_eq(
+    @ctl.i_errno_to_text(114),
+    Some("unable to receive parameters from client"),
+  )
+  assert_eq(
+    @ctl.i_errno_to_text(121),
+    Some("the server is busy running a test. try again later"),
+  )
+  assert_eq(@ctl.i_errno_to_text(208), Some("stream has an invalid id"))
+  assert_eq(@ctl.i_errno_to_text(103), Some("unable to connect to server"))
+  // Unknown codes degrade to None so callers can fall back to raw numbers.
+  assert_true(@ctl.i_errno_to_text(999) is None)
+  assert_true(@ctl.i_errno_to_text(-3) is None)
 }
 
 ///|
@@ -340,11 +376,12 @@ test "params to_json sends get_server_output only when requested" {
 
 ///|
 test "bitrate resolution mirrors iperf3 defaults and -b 0 semantics" {
-  // UDP without an explicit rate falls back to iperf3's 1 Mbit/s default.
+  // UDP without an explicit rate falls back to iperf3's UDP_RATE default
+  // (1024 * 1024 bits/s, src/iperf.h).
   assert_eq(@ctl.Params::default_params().bitrate(), 0L)
   let u = @ctl.Params::default_params()
   u.udp = true
-  assert_eq(u.bitrate(), 1000000L)
+  assert_eq(u.bitrate(), 1048576L)
   // An explicit positive rate wins for either protocol...
   u.bandwidth = 5000000L
   assert_eq(u.bitrate(), 5000000L)
@@ -354,7 +391,7 @@ test "bitrate resolution mirrors iperf3 defaults and -b 0 semantics" {
   // ...while a bandwidth of 0 (the key is absent on the wire then) falls
   // back to the UDP default on the receiving side.
   u.bandwidth = 0L
-  assert_eq(u.bitrate(), 1000000L)
+  assert_eq(u.bitrate(), 1048576L)
   // total_seconds folds the omitted warm-up window into the deadline.
   t.omit = 2
   t.time = 5
