@@ -43,6 +43,9 @@ start_server() {
   "$@" -s -p "$PORT" >/dev/null 2>&1 &
   srv_pid=$!
   sleep 1
+  if ! kill -0 "$srv_pid" 2>/dev/null; then
+    echo "  (note: server failed to survive startup: $*)"
+  fi
 }
 
 # Validate JSON read on stdin. CI runners have python3; some Windows setups
@@ -61,12 +64,18 @@ json_ok() {
 expect_zero() {
   label=$1
   shift
-  if "$@" >/dev/null 2>&1; then
+  out=$("$@" 2>&1)
+  code=$?
+  if [ $code -eq 0 ]; then
     pass=$((pass + 1))
     echo "  ok  $label"
   else
     fail=$((fail + 1))
-    echo "  FAIL $label"
+    echo "  FAIL $label (exit=$code)"
+    echo "$out" | tail -5 | sed 's/^/      | /'
+    if [ -n "${srv_pid:-}" ] && ! kill -0 "$srv_pid" 2>/dev/null; then
+      echo "      | (server process has died)"
+    fi
   fi
 }
 
