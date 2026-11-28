@@ -28,47 +28,7 @@ jobs:
         shell: bash
         run: git config --global core.autocrlf false
 
-      # cli.moonbitlang.com answers 403 to default user agents, so we download
-      # the toolchain + core archives directly with an explicit "moon" UA and
-      # replicate what the official installers do (extract + bundle core).
-      - name: Install MoonBit (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $h = @{ 'User-Agent' = 'moon' }
-          $moonHome = Join-Path $HOME '.moon'
-          New-Item -ItemType Directory -Force -Path $moonHome | Out-Null
-          Invoke-WebRequest 'https://cli.moonbitlang.com/binaries/latest/moonbit-windows-x86_64.zip' -Headers $h -OutFile "$env:RUNNER_TEMP\moonbit.zip"
-          Expand-Archive "$env:RUNNER_TEMP\moonbit.zip" -DestinationPath $moonHome -Force
-          Invoke-WebRequest 'https://cli.moonbitlang.com/cores/core-latest.zip' -Headers $h -OutFile "$env:RUNNER_TEMP\core.zip"
-          Expand-Archive "$env:RUNNER_TEMP\core.zip" -DestinationPath (Join-Path $moonHome 'lib') -Force
-          Push-Location (Join-Path $moonHome 'lib\core')
-          & (Join-Path $moonHome 'bin\moon.exe') bundle --warn-list -a --all
-          & (Join-Path $moonHome 'bin\moon.exe') bundle --warn-list -a --target wasm-gc --quiet
-          Pop-Location
-          Add-Content $env:GITHUB_PATH "$moonHome\bin"
-
-      - name: Install MoonBit (Linux / macOS)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "${{ runner.os }}" in
-            Linux) target=linux-x86_64 ;;
-            macOS) target=darwin-aarch64 ;;
-            *) echo "unsupported runner os: ${{ runner.os }}"; exit 1 ;;
-          esac
-          mkdir -p "$HOME/.moon"
-          curl -fsSL -A moon "https://cli.moonbitlang.com/binaries/latest/moonbit-$target.tar.gz" -o /tmp/moonbit.tar.gz
-          tar xf /tmp/moonbit.tar.gz -C "$HOME/.moon"
-          curl -fsSL -A moon "https://cli.moonbitlang.com/cores/core-latest.tar.gz" -o /tmp/core.tar.gz
-          tar xf /tmp/core.tar.gz -C "$HOME/.moon/lib"
-          chmod +x "$HOME/.moon/bin/"*
-          chmod +x "$HOME/.moon/bin/internal/tcc" || true
-          "$HOME/.moon/bin/moon" -C "$HOME/.moon/lib/core" bundle --warn-list -a --all
-          "$HOME/.moon/bin/moon" -C "$HOME/.moon/lib/core" bundle --warn-list -a --target wasm-gc --quiet
-          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/setup-moonbit
 
       # Fresh runners have no registry index; moon check/test/build refuse to
       # resolve moonbitlang/async until the index is fetched once.
@@ -108,3 +68,31 @@ jobs:
           & $exe -c 127.0.0.1 -p 15201 -t 2 -J | Out-Null
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Stop-Process -Id $srv.Id -Force
+
+  # Cross-implementation matrix against the reference iperf3, per
+  # docs/protocol.md: mooniperf drives a real iperf3 server and vice versa.
+  interop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-moonbit
+
+      - name: Update registry index
+        run: moon update
+
+      - name: Install reference iperf3
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iperf3
+          iperf3 --version
+
+      - name: Build CLI
+        run: moon build
+
+      - name: Cross-implementation interop matrix
+        run: |
+          exe=$(find _build -type f -path '*build/cmd/main/main*' | head -1)
+          if [ -z "$exe" ]; then echo 'built CLI not found'; exit 1; fi
+          echo "binary: $exe"
+          bash scripts/interop.sh "$exe" "$(command -v iperf3)" 15601
