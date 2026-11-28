@@ -11,10 +11,14 @@ MoonIperf 说 iperf3 的线上协议（控制连接 JSON + 数据连接 + UDP �
 - `mooniperf -c <host>` 可以直接连 **真实的 iperf3 服务器**（`iperf3 -s`）；
 - `mooniperf -s` 可以被 **真实的 iperf3 客户端**（`iperf3 -c`）压测。
 
-## 与真实 iperf3 的互操作（已实测）
+## 与真实 iperf3 的互操作（已实测，CI 持续回归）
 
 对照实现：iperf 3.1.3（iperf.fr 官方 Windows x64 构建，Cygwin），
-同一台机器回环双向对测，2026-11-21 首测、2026-11-22 复测（13/13 再次通过）。
+同一台机器回环双向对测，2026-11-21 首测、2026-11-22 复测（13/13 再次通过）、
+2026-11-28 v0.1.4 复测（22/22 通过，含新增的 `-k`/`--get-server-output`/
+CLI 误用拒绝与 `-J` 合法性检查）。自 v0.1.4 起，这套互操作矩阵由
+`scripts/interop.sh` 在 **CI 的 `interop` 任务中每次推送自动回归**
+（ubuntu runner 使用发行版 iperf3）。
 `✅` = 客户端进程退出码 0，双方完成参数交换、数据测量与结果交换。
 
 | 客户端 | 服务器 | TCP P1 | TCP P2 | TCP P3 | UDP | `-J` | `-O` | `-n` |
@@ -59,11 +63,12 @@ MoonIperf 说 iperf3 的线上协议（控制连接 JSON + 数据连接 + UDP �
   实测 19.6–21.4 Gbits/sec）。
 - 收发路径零拷贝思路：预填充的 `Bytes` 模式块反复 `write`，读端复用
   `FixedArray[Byte]` 缓冲，热路径不产生中间 `String` 分配。
-- **UDP 限速精度**（时间驱动步进限速，目标速率 vs 客户端实测）：
+- **UDP 限速精度**（时间驱动步进限速，目标速率 vs 客户端实测；默认速率为
+  iperf3 的 `UDP_RATE = 1024²`，0.1.4 实测，5 秒回环）：
 
   | 目标速率 | mooniperf 实测 | iperf3 实测 | 丢包 | 抖动 |
   |---|---|---|---|---|
-  | 1 Mbit/s | 981–988 Kbits/sec | 973–979 Kbits/sec | 0 | 0.000 ms（回环） |
+  | 默认（UDP_RATE=1024²） | 1.02–1.03 Mbits/sec | 1.05 Mbits/sec | 0 | 0.000 ms（回环） |
   | 100 Mbit/s | 98.5 Mbits/sec | 102 Mbits/sec | 0 | 0.000 ms（回环） |
 
   高速率下自动成批发送，避免逐包 sleep 的 1000 包/秒上限；两实现偏差
@@ -85,7 +90,7 @@ MoonIperf 说 iperf3 的线上协议（控制连接 JSON + 数据连接 + UDP �
 | 报告参数 | `-i 0.5` 小数间隔 + `-O 1` 预热，自互通 | 通过 |
 | CLI 误用 | 连不上端口、`-b 垃圾值`、`-s -c` 同用、缺模式、`-i 0`、UDP `-l 4` | 均以非零退出码拒绝 |
 
-单元测试另有 39 项覆盖：封帧编解码、cookie、流 id 序列、限速解析（含
+单元测试另有 43 项覆盖：封帧编解码、cookie、流 id 序列、限速解析（含
 K/M/G/T 与越界拒绝）、Int64 溢出防护、RFC 1889 抖动/乱序、JSON 结果
 编解码与格式化。
 
@@ -133,21 +138,28 @@ iperf Done.
 -s, --server           服务器模式
 -c, --client <host>    客户端模式，连接 <host>
 -p, --port <n>         端口（默认 5201）
--t, --time <n>         测试时长/秒（默认 10）
+-t, --time <n>         测试时长/秒（默认 10，上限 86400；-t/-n/-k 三选一）
 -i, --interval <n>     报告间隔/秒（默认 1）
 -P, --parallel <n>     并行数据连接数（TCP，默认 1；UDP 单流）
 -u, --udp              使用 UDP
--b, --bitrate <n>[KMGT] 目标速率 bits/s（UDP 默认 1M，`-b 0` 不限速；TCP 同样生效）
--l, --len <n>          块大小（TCP 默认 131072，UDP 8192）
--n, --bytes <n>        发送 n 字节后停止
--k, --blockcount <n>   发送 n 块后停止
+-b, --bitrate <n>[KMGT] 目标速率 bits/s（UDP 默认同 iperf3 UDP_RATE = 1024^2，
+                        `-b 0` 不限速；TCP 同样生效；后缀为十进制倍率，
+                        支持小数，如 `-b 1.5M`）
+-l, --len <n>          块大小（TCP 默认 131072，UDP 8192；后缀为二进制倍率，
+                        如 `-l 64K`）
+-n, --bytes <n>        发送 n 字节后停止（后缀为二进制倍率，如 `-n 32M`）
+-k, --blockcount <n>   发送 n 块后停止（同上）
 -O, --omit <n>         剔除前 n 秒（预热）
 -w, --window <n>       窗口大小（接受但未生效，需 setsockopt FFI）
 --get-server-output    回收服务器摘要（文本模式打印，-J 内嵌报告）
--J, --json             JSON 输出（iperf3 报告结构）
+-J, --json             JSON 输出（iperf3 报告结构；错误同样以
+                       {"error": "..."} 输出）
 -v, --version          版本
 -h, --help             帮助
 ```
+
+后缀倍率与 iperf3 的 src/units.c 一致：`-b` 用十进制（K=10^3），字节数类
+选项用二进制（K=2^10）；`-t`/`-n`/`-k` 同时给出任意两个都会被拒绝。
 
 ## 实现说明（协议与性能）
 
@@ -169,7 +181,7 @@ iperf Done.
   与真实 iperf3 双向验证。
 - 时钟来自事件循环（毫秒精度），UDP 报文头的时间戳分辨率受此限制。
 
-## 已知限制（v0.1.3）
+## 已知限制（v0.1.4）
 
 - `-R`（反向模式）：协议状态机已实现且自互通通过，但 Windows 事件循环下
   已连接 UDP / 长写场景存在边界问题，暂时在 CLI 层禁用（路线图第一项，
@@ -185,8 +197,11 @@ iperf Done.
 
 ```bash
 moon check   # 类型检查（0 警告）
-moon test    # 39 个单元测试（协议编解码、RFC 1889 抖动、边界与格式化）
+moon test    # 43 个单元测试（协议编解码、RFC 1889 抖动、边界与格式化）
 moon build   # 构建 CLI
+
+# 与真实 iperf3 的互操作矩阵（CI 的 interop 任务同款，需本机装有 iperf3）
+bash scripts/interop.sh _build/native/debug/build/cmd/main/main "$(command -v iperf3)" 15601
 ```
 
 包结构：

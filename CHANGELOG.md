@@ -3,6 +3,46 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.4] - 2026-11-28
+
+### 新增
+
+- **CLI 参数解析对齐 iperf3（src/units.c）**：`-b` 的 K/M/G/T 后缀按
+  `unit_atof_rate` 用十进制（10^3）倍率并支持小数（`-b 1.5M`）；`-n`/`-k`/
+  `-l`/`-w` 按 `unit_atoi` 用二进制（2^10）倍率并支持小数（`-n 32M` 现为
+  32×1024² 字节，与 iperf3 一致）。实测 iperf3 3.1.3 + 核对其 master
+  units.c 后对齐。
+- **`-t`/`-n`/`-k` 三选一**：与 iperf3 相同，任意两个端条件同用即以
+  `only one test end condition (-t, -n, -k) may be specified` 拒绝
+  （IEENDCONDITIONS，实测 iperf3 3.1.3 行为一致）；`-t` 上限 86400 秒。
+- **`-J` 模式错误输出为 JSON**：参数错误与运行期错误以
+  `{"error": "..."}`（正确转义）输出，可被机器解析，替代此前的纯文本。
+- **服务器参数交换失败时回 `SERVER_ERROR`**：参数 JSON 读取失败不再静默
+  断开，而是回 `SERVER_ERROR + (i_errno=114/IERECVPARAMS, errno)`，与
+  iperf3 服务器行为一致；客户端收到 `SERVER_ERROR` 时按 iperf3 的
+  `iperf_strerror` 文案渲染（71 条 i_errno 文案取自 iperf3 3.1.3
+  src/iperf_error.c，见 `ctl/ierrno.mbt`）。
+- **CI 新增真实 iperf3 互操作矩阵**：`scripts/interop.sh` 在 CI 中把
+  mooniperf 与发行版 iperf3（ubuntu 的 apt 包）双向对测（TCP -P 1/2/3、
+  UDP、`-J` 报告 JSON 合法性、`-O`/`-n`/`-k`、`--get-server-output`、
+  CLI 误用拒绝），每次推送即回归 3.x 线上兼容性。
+
+### 变更
+
+- **UDP 默认速率对齐 iperf3 的 `UDP_RATE`**：未给 `-b` 时 UDP 目标从
+  1000000 修正为 1048576 bits/s（iperf3 src/iperf.h 定义 `1024 * 1024`），
+  默认 `-u` 测试现与 iperf3 一样报约 1.05 Mbits/sec。
+- CI 的工具链安装重构为复合 action（`.github/actions/setup-moonbit`），
+  `build` 矩阵与 `interop` 任务共用。
+
+### 测试
+
+- 单元测试 39 → 43：小数/二进制倍率解析（`parse_rate`/`parse_bytes`）、
+  端条件互斥（`end_condition_error`）、`SERVER_ERROR` body 编码往返、
+  i_errno 文案抽查；UDP 默认速率断言更新为 1048576。
+
+[0.1.4]: https://github.com/yiii0012/mooniperf/compare/0.1.3...0.1.4
+
 ## [0.1.3] - 2026-11-28
 
 ### 变更
