@@ -42,9 +42,23 @@ start_server() {
   cleanup
   "$@" -s -p "$PORT" >/dev/null 2>&1 &
   srv_pid=$!
-  sleep 1
-  if ! kill -0 "$srv_pid" 2>/dev/null; then
-    echo "  (note: server failed to survive startup: $*)"
+  # Wait until the server actually ACCEPTS on the port (up to 5s) instead of
+  # a blind sleep — a fresh kill+restart can lag under runner load, and a
+  # client that connects too early taints the whole case.
+  local ready=""
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if ! kill -0 "$srv_pid" 2>/dev/null; then
+      break
+    fi
+    if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
+      exec 3>&- 3<&- 2>/dev/null
+      ready=1
+      break
+    fi
+    sleep 0.25
+  done
+  if [ -z "$ready" ]; then
+    echo "  (note: server never accepted on port $PORT: $*)"
   fi
 }
 
